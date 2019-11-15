@@ -3,6 +3,7 @@ import copy
 import matplotlib.pyplot as plt
 from matplotlib import animation, rc
 from IPython.display import HTML
+from tqdm import tqdm
 
 class Particle:
 
@@ -208,7 +209,7 @@ class box_simulation_many_particles():
                         # print("no collision, because moving away from each other")
                         pass
                     else:
-                        self.elastic_collision(self.particles[i], self.particles[j])
+                        self.elastic_collision_wiki(self.particles[i], self.particles[j])
 
     def check_for_reflection(self):
         """ method for checking if a reflection at a border is taking place """
@@ -246,7 +247,7 @@ class box_simulation_many_particles():
                 p = Particle(x=particle[0], y=particle[1], vx=particle[2], vy=particle[3], r=particle[4])
                 self.particles.append(p)
 
-        for i in range(steps):
+        for i in tqdm(range(steps)):
             #collisions = self.check_for_collision(collisions)
             if i!=0: #dont want to collide them already in the start position
                 self.check_for_collision(pbc=pbc)
@@ -291,17 +292,20 @@ class box_simulation_many_particles():
         plt.xlabel('position x')
         plt.ylabel('position y')
 
-        line, = ax.plot([], [], marker = 'o', linestyle='', markersize=3)
+        lines = [ax.plot([], [], marker = 'o', linestyle='', markersize=3)[0]
+                 for i in range(len(self.particles))]
 
         def init():
-            line.set_data([], [])
-            return(line,)
+            for line in lines:
+                line.set_data([], [])
+            return lines
 
         def animate(i):
-            x = np.array([self.trajectories[j][0,i] for j in range(len(self.particles))])
-            y = np.array([self.trajectories[j][1,i] for j in range(len(self.particles))])
-            line.set_data(x, y)
-            return(line,)
+            for j,line in enumerate(lines):
+                x = self.trajectories[j][0,i]
+                y = self.trajectories[j][1,i]
+                line.set_data(x, y)
+            return lines
 
         anim = animation.FuncAnimation(fig, animate, init_func=init, \
                                    frames=self.steps, interval=animation_interval, blit=True)
@@ -366,7 +370,7 @@ class box_simulation_many_particles():
         # plot the normalised histograms
         ax1.hist(vx, bins=30, density=1,
                  range=(-2.5*self.particle_start_velocity, 2.5*self.particle_start_velocity))
-        ax2.hist(vx, bins=30, density=1,
+        ax2.hist(vy, bins=30, density=1,
                  range=(-2.5*self.particle_start_velocity, 2.5*self.particle_start_velocity))
         v_tot = np.sqrt(vx**2+vy**2)
         ax3.hist(v_tot, bins=30, density=1, range=(0, 3.1*self.particle_start_velocity))

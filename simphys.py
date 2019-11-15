@@ -92,6 +92,43 @@ class box_simulation_many_particles():
 
     def elastic_collision(self, p1, p2, pbc=True):
 
+        # to calculate the velocity vectors of the two colliding particles
+        # perform a basis transformation to a basis with one basis-vector
+        # pointing along the connection line between p1 and p2 and the other
+        # being perpendicular to that line.
+        # The velocity components parallel to the connection line are
+        # swapped and the components perpendicular to this line remain the same
+
+        dx, dy = dx_dy(p1, p2, self.box[0], self.box[1], pbc=pbc)
+
+        # define the normalised vector along the connection line
+        p = np.array([dx, dy]) / np.sqrt(dx**2 + dy**2)
+        # define the basis transformation matrix B and the inverse
+        B = np.array([[p[0], p[1]], [-p[1], p[0]]])
+        B_inv = B.transpose()
+        #print(np.dot(B, B_inv))
+
+        v1 = np.array([p1.vx, p1.vy])
+        v2 = np.array([p2.vx, p2.vy])
+        v1_transformed = np.dot(B, v1)
+        v2_transformed = np.dot(B, v2)
+        # store the parallel components
+        v1_parallel = v1_transformed[0]
+        v2_parallel = v2_transformed[0]
+        # print("Parallel components:", v1_parallel, v2_parallel)
+        # update the velocity vectors, swap parallel component
+        v1_transformed[0] = v2_parallel
+        v2_transformed[0] = v1_parallel
+        # transform the new vectors back in the original basis
+        v1_prime = np.dot(B_inv, v1_transformed)
+        v2_prime = np.dot(B_inv, v2_transformed)
+        # update the velicity in the particle objects
+        p1.vx, p1.vy = v1_prime[0], v1_prime[1]
+        p2.vx, p2.vy = v2_prime[0], v2_prime[1]
+
+
+    def elastic_collision_wiki(self, p1, p2, pbc=True):
+
         # to calculate the directions of the velocities after the collision,
         # one needs to calculate the tangent t along the two particles at the collision point
         # this can be done by inverting and inserting a factor -1 to the slope s between the
@@ -168,7 +205,7 @@ class box_simulation_many_particles():
                          self.particles[i].vy * dy) < 0 and\
                         (self.particles[j].vx * dx + \
                          self.particles[j].vy * dy) > 0):
-                        print("no collision, because moving away from each other")
+                        # print("no collision, because moving away from each other")
                         pass
                     else:
                         self.elastic_collision(self.particles[i], self.particles[j])

@@ -41,15 +41,17 @@ class Particle:
         self.vx *= -1
 
 # function for the movement of a particle    
-def move(p,dt, box_length_x, box_length_y):
+def move(p, box_length_x, box_length_y, dt=1, pbc=True):
+    if not pbc:
+        box_length_x = 0
+        box_lenght_y = 0
     p.x = (p.x + p.vx*dt) % box_length_x
     p.y = (p.y + p.vy*dt) % box_length_y
     return p    
 
-def dx_dy(p1, p2, box_length_x, box_length_y, pbc=True):
+def dx_dy(p1, p2, box_length_x, box_length_y, pbc=True, verbose=False):
     dx = p1.x - p2.x
     dy = p1.y - p2.y
-    #print("dx =", dx)
     if pbc:
         # if the distance is larger than half the box length
         # subtract the length, which gives the distance when
@@ -66,7 +68,8 @@ def dx_dy(p1, p2, box_length_x, box_length_y, pbc=True):
                 dy = dy - box_length_y
             elif dy < 0:
                 dy = box_length_y + dy
-            #print("used the modified dy =", dy)
+    if verbose:
+        print("dx =", dx, ", dy =", dy)
     return dx, dy
 
 def test():
@@ -185,11 +188,12 @@ class box_simulation_many_particles():
         p2.vy = yt2 + ys1
 
     # method to check if a elastic collision takes place
-    def check_for_collision(self, pbc=True):
+    def check_for_collision(self, pbc=True, print_dx_dy=False):
         """ method for checking which collisions are taking place """
         for i in range(len(self.particles)):
             for j in range(i+1, len(self.particles), 1):
-                dx, dy = dx_dy(self.particles[j], self.particles[i], self.box[0], self.box[1], pbc=pbc)
+                dx, dy = dx_dy(self.particles[i], self.particles[j], self.box[0], self.box[1], 
+                               pbc=pbc, verbose=print_dx_dy)
                 distance = np.sqrt(dx**2 + dy**2)
                 # check if the distance between the particles is smaller than 2 times the radius
                 if (distance < (self.particles[i].r + self.particles[j].r)):
@@ -200,12 +204,13 @@ class box_simulation_many_particles():
                     # -> then they should not collide (this is the case if
                     #    particles collided in the previous simulation step but
                     #    are still not far enough away from each other)
-                    #    therefore, project the velocity vector of particle i onto
-                    #    the connection line from particle i to particle j and vice versa
+                    #    therefore, project the velocity vectors onto the connection line
+                    #    between the two particles
+                    # print("distance = ", distance)
                     if ((self.particles[i].vx * dx + \
-                         self.particles[i].vy * dy) < 0 and\
+                         self.particles[i].vy * dy) > 0 and\
                         (self.particles[j].vx * dx + \
-                         self.particles[j].vy * dy) > 0):
+                         self.particles[j].vy * dy) < 0):
                         # print("no collision, because moving away from each other")
                         pass
                     else:
@@ -225,8 +230,9 @@ class box_simulation_many_particles():
     """ >>>>>>>>> End of Task I <<<<<<<<< """
 
 
-    def simulate(self, n_particles, particle_radius=0.5, steps=2000,
-                 particle_velocity=0.5, pbc=True, test_particles=[]):
+    def simulate(self, n_particles, particle_radius=0.5, particle_mass=1, steps=2000,
+                 particle_velocity=0.5, pbc=True, test_particles=[], step_interval=1,
+                 print_dx_dy=False):
         """ method to run the simulation and create the trajectories of the particles"""
         self.steps = steps
         self.particle_start_velocity = particle_velocity
@@ -237,7 +243,7 @@ class box_simulation_many_particles():
         # velocity direction (but absolut value of 0.5)
         self.particles = []
         for i in range(n_particles):
-            p = Particle(r=particle_radius)
+            p = Particle(r=particle_radius, m=particle_mass)
             p.random_position(0, self.box[0], 0, self.box[1])
             p.random_velocity(particle_velocity)
             self.particles.append(p)
@@ -250,7 +256,7 @@ class box_simulation_many_particles():
         for i in tqdm(range(steps)):
             #collisions = self.check_for_collision(collisions)
             if i!=0: #dont want to collide them already in the start position
-                self.check_for_collision(pbc=pbc)
+                self.check_for_collision(pbc=pbc, print_dx_dy=print_dx_dy)
                 if not pbc:
                     self.check_for_reflection()
 
@@ -258,7 +264,7 @@ class box_simulation_many_particles():
             for j in range(len(self.particles)):
                 self.trajectories[j][:,i] = [self.particles[j].x,  self.particles[j].y, \
                                              self.particles[j].vx, self.particles[j].vy]
-                move(self.particles[j], 1, self.box[0], self.box[1])
+                move(self.particles[j], self.box[0], self.box[1], dt=step_interval, pbc=pbc)
 
     def plot_trajectories(self):
         """ method to plot the trajectories of all particles """
@@ -269,8 +275,8 @@ class box_simulation_many_particles():
         fig, ax1 = plt.subplots()
         fig.set_figheight(5)
         fig.set_figwidth(5)
-        ax1.set_xlim((0, 50))
-        ax1.set_ylim((0, 50))
+        ax1.set_xlim((0, self.box[0]))
+        ax1.set_ylim((0, self.box[1]))
 
         ax1.set_xlabel('position x')
         ax1.set_ylabel('position y')
@@ -292,7 +298,7 @@ class box_simulation_many_particles():
         plt.xlabel('position x')
         plt.ylabel('position y')
 
-        lines = [ax.plot([], [], marker = 'o', linestyle='', markersize=3)[0]
+        lines = [ax.plot([], [], marker = 'o', linestyle='', markersize=5)[0]
                  for i in range(len(self.particles))]
 
         def init():
@@ -309,11 +315,11 @@ class box_simulation_many_particles():
 
         anim = animation.FuncAnimation(fig, animate, init_func=init, \
                                    frames=self.steps, interval=animation_interval, blit=True)
-        plt.show()
+        #plt.show()
         return HTML(anim.to_html5_video())
         #return HTML(anim.to_jshtml())
 
-    def occupation(self, start=0, end=0):
+    def occupation(self, start=0, end=0, n_bins=50):
         """ method to plot the occupation on the x-y plane as well
         as the projections on the x and y axis """
         if end==0:
@@ -322,8 +328,8 @@ class box_simulation_many_particles():
         fig.set_figheight(5)
         fig.set_figwidth(18)
 
-        ax1.set_xlim((0, 50))
-        ax1.set_ylim((0, 50))
+        ax1.set_xlim((0, self.box[0]))
+        ax1.set_ylim((0, self.box[1]))
 
         ax1.set_xlabel('position x')
         ax1.set_ylabel('position y')
@@ -339,15 +345,15 @@ class box_simulation_many_particles():
         # the returned 2D array "counter_squares" stores the number of entries of the bins
         x = np.concatenate([self.trajectories[j][0,start:end] for j in range(len(self.particles))])
         y = np.concatenate([self.trajectories[j][1,start:end] for j in range(len(self.particles))])
-        counter_squares, d, f, mappable = ax1.hist2d(x, y, bins=50, density=1)
+        counter_squares, d, f, mappable = ax1.hist2d(x, y, bins=n_bins, density=1)
         fig.colorbar(mappable, ax=ax1, orientation='vertical')
 
-        ax2.hist(x, bins=50, density=1)
-        ax3.hist(y, bins=50, density=1)
+        ax2.hist(x, bins=n_bins, density=1)
+        ax3.hist(y, bins=n_bins, density=1)
         plt.tight_layout()
         plt.show()
 
-    def velocity_distributions(self, start=0, end="standard"):
+    def velocity_distributions(self, start=0, end="standard", n_bins=50):
         """ methdo to plot the velocity distributions """
         if end=="standard":
             end = self.steps
@@ -368,12 +374,12 @@ class box_simulation_many_particles():
         vx = np.concatenate([self.trajectories[j][2,start:end] for j in range(len(self.particles))])
         vy = np.concatenate([self.trajectories[j][3,start:end] for j in range(len(self.particles))])
         # plot the normalised histograms
-        ax1.hist(vx, bins=30, density=1,
+        ax1.hist(vx, bins=n_bins, density=1,
                  range=(-2.5*self.particle_start_velocity, 2.5*self.particle_start_velocity))
-        ax2.hist(vy, bins=30, density=1,
+        ax2.hist(vy, bins=n_bins, density=1,
                  range=(-2.5*self.particle_start_velocity, 2.5*self.particle_start_velocity))
         v_tot = np.sqrt(vx**2+vy**2)
-        ax3.hist(v_tot, bins=30, density=1, range=(0, 3.1*self.particle_start_velocity))
+        ax3.hist(v_tot, bins=n_bins, density=1, range=(0, 3.1*self.particle_start_velocity))
 
         plt.tight_layout()
         plt.show()

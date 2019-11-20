@@ -73,8 +73,6 @@ def dx_dy(p1, p2, box_length_x, box_length_y, pbc=True, verbose=False):
         print("dx =", dx, ", dy =", dy)
     return dx, dy
 
-def test():
-    print("called the test function")
 
 """>>>>>> simulation class <<<<<<<"""
 
@@ -92,9 +90,6 @@ class box_simulation_many_particles():
 
     def init_box(self, x, y):
         self.box = [x, y]
-
-    """ ============================================================= """
-    """ Task I: Implementation of the collision between two particles """
 
     def elastic_collision(self, p1, p2, pbc=True):
 
@@ -189,7 +184,6 @@ class box_simulation_many_particles():
         p2.vx = xt2 + xs1
         p2.vy = yt2 + ys1
 
-    # method to check if a elastic collision takes place
     def calculate_distances(self, collide=True, pbc=True, print_dx_dy=False):
         """ method for checking which collisions are taking place """
         # to get the distances of the particles for the calculation of the
@@ -206,6 +200,9 @@ class box_simulation_many_particles():
                 distance = np.sqrt(dx**2 + dy**2)
                 # update the distance entry in the array
                 distances[i][counter] = distance
+                counter += 1
+                if j>i: # these particles were already collided if necessary
+                    continue
                 # check if the distance between the particles is smaller than 2 times the radius
                 if (distance < (self.particles[i].r + self.particles[j].r) and collide):
                     # distance of particle centers is smaller than the
@@ -224,12 +221,9 @@ class box_simulation_many_particles():
                          self.particles[j].vy * dy) < 0):
                         #print("no collision, because moving away from each other", "distance:", distance,
                                 #"dx", dx, "dy", dy)
-                        #print(self.particles[i])
-                        #print(self.particles[j])
                         pass
                     else:
                         self.elastic_collision(self.particles[i], self.particles[j])
-                counter += 1
         return distances
 
     def check_for_reflection(self):
@@ -242,8 +236,6 @@ class box_simulation_many_particles():
             if ((abs(p.y - self.box[1]) < p.r) and p.vy>0) or \
                 (abs(p.y < p.r) and p.vy < 0) or p.y<0 or p.y>self.box[1]:
                 p.reflection_x_axis()
-
-    """ >>>>>>>>> End of Task I <<<<<<<<< """
 
 
     def simulate(self, n_particles, particle_radius=0.5, particle_mass=1, steps=2000,
@@ -263,14 +255,14 @@ class box_simulation_many_particles():
             p.random_velocity(particle_velocity)
             self.particles.append(p)
 
-        # create a numpy array containing arrays that store the distances between particles
-        distances_placeholder = np.array([np.zeros(len(self.particles)-1) for p in self.particles])
-        self.particle_distances = np.array([ distances_placeholder for step in range(steps) ])
-
         if test_particles != []:
             for particle in test_particles:
                 p = Particle(x=particle[0], y=particle[1], vx=particle[2], vy=particle[3], r=particle[4])
                 self.particles.append(p)
+
+        # create a numpy array containing arrays that store the distances between particles
+        distances_placeholder = np.array([np.zeros(len(self.particles)-1) for p in self.particles])
+        self.particle_distances = np.array([ distances_placeholder for step in range(steps) ])
 
         for i in tqdm(range(steps)):
             #if i!=0: #dont want to collide them already in the start position
@@ -291,8 +283,8 @@ class box_simulation_many_particles():
 
         # set up the figure for the box plot
         fig, ax1 = plt.subplots()
-        fig.set_figheight(5)
-        fig.set_figwidth(5)
+        fig.set_figheight(4)
+        fig.set_figwidth(4)
         ax1.set_xlim((0, self.box[0]))
         ax1.set_ylim((0, self.box[1]))
 
@@ -304,11 +296,11 @@ class box_simulation_many_particles():
         plt.tight_layout()
         plt.show()
 
-    def animate_trajectories(self, animation_interval=30):
+    def animate_trajectories(self, animation_interval=30, dot_size=5):
         """ method to animate the particle movement """
         fig, ax = plt.subplots()
-        fig.set_figheight(5)
-        fig.set_figwidth(5)
+        fig.set_figheight(6)
+        fig.set_figwidth(6)
 
         ax.set_xlim(0, self.box[0])
         ax.set_ylim(0, self.box[1])
@@ -316,7 +308,7 @@ class box_simulation_many_particles():
         plt.xlabel('position x')
         plt.ylabel('position y')
 
-        lines = [ax.plot([], [], marker = 'o', linestyle='', markersize=5)[0]
+        lines = [ax.plot([], [], marker = 'o', linestyle='', markersize=dot_size)[0]
                  for i in range(len(self.particles))]
 
         def init():
@@ -343,8 +335,8 @@ class box_simulation_many_particles():
         if end==0:
             end = self.steps
         fig, (ax1, ax2, ax3) = plt.subplots(1, 3)
-        fig.set_figheight(5)
-        fig.set_figwidth(18)
+        fig.set_figheight(4)
+        fig.set_figwidth(13)
 
         ax1.set_xlim((0, self.box[0]))
         ax1.set_ylim((0, self.box[1]))
@@ -376,8 +368,8 @@ class box_simulation_many_particles():
         if end=="standard":
             end = self.steps
         fig, (ax1, ax2, ax3) = plt.subplots(1, 3)
-        fig.set_figheight(5)
-        fig.set_figwidth(18)
+        fig.set_figheight(3)
+        fig.set_figwidth(15)
 
         ax1.set_xlabel(r'velocity $v_x$')
         ax1.set_ylabel('probability')
@@ -402,13 +394,13 @@ class box_simulation_many_particles():
         plt.tight_layout()
         plt.show()
 
-    def radial_distribution_function(self, n_bins=20, dr=0.01):
+    def radial_distribution_function(self, n_bins=20, dr=0.01, n_linspace=200):
         """ method to plot the radial distrib. fuc. """
 
         n_distances_total = self.steps * len(self.particles) * (len(self.particles) -1)
         distances_time_average = np.reshape(self.particle_distances, n_distances_total)
 
-        r_linspace = np.linspace(dr, self.box[0], 1000)
+        r_linspace = np.linspace(dr, self.box[0]/2, n_linspace)
 
         def g(r, dr=dr):
             dn = np.zeros(len(r))
@@ -416,14 +408,8 @@ class box_simulation_many_particles():
             for i in tqdm(range(len(r))):
                 dn[i] = len(distances_time_average[(r[i]<distances_time_average) & (distances_time_average<(r[i]+dr))])
             return 1 / (2 * np.pi * r * rho) * dn / dr * 1 / (self.steps * len(self.particles))
-        #print("dn_dr", dn_dr(1))
 
-        #print("Shape of distance time average array:", dist_time_average.shape)
-        #n_zero = len([1 for i in dist_time_average if i==0])
-        #n_ones = len([1 for i in dist_time_average if i==1])
-        #print("number of distance 0:", n_zero)
-        #print("number of distance 1:", n_ones)
-        #print("numbe of distances:", len(dist_time_average))
+        g_r_linspace = g(r_linspace)
 
         fig, (ax1, ax2) = plt.subplots(1, 2)
         fig.set_figheight(3)
@@ -435,11 +421,11 @@ class box_simulation_many_particles():
         ax1.set_title(r"Distribution of distances")
         ax2.set_title(r"Time and particle averaged RDF")
         ax1.hist(distances_time_average, bins=n_bins)
-        ax2.plot(r_linspace, g(r_linspace))
+        ax2.plot(r_linspace, g_r_linspace)
         plt.tight_layout()
         plt.show()
 
-        return
+        return r_linspace, g_r_linspace
 
 
 

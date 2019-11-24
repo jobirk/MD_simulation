@@ -7,11 +7,13 @@ from tqdm import tqdm
 
 class Particle:
 
-    def __init__(self, x=0, y=0, vx=0, vy=0, m=1, r=0.5):
+    def __init__(self, x=0, y=0, vx=0, vy=0, ax=0, ay=0, m=1, r=0.5):
         self.x = x
         self.y = y
         self.vx = vx
         self.vy = vy
+        self.ax = ax
+        self.ay = ay
         self.r = r
         self.m = m
 
@@ -69,9 +71,10 @@ def dx_dy(p1, p2, box_length_x, box_length_y, pbc=True, verbose=False):
                 dy = dy - box_length_y
             elif dy < 0:
                 dy = box_length_y + dy
+    d = np.sqrt(dx**2 + dy**2)
     if verbose:
         print("dx =", dx, ", dy =", dy)
-    return dx, dy
+    return dx, dy, d
 
 
 """>>>>>> simulation class <<<<<<<"""
@@ -100,10 +103,11 @@ class box_simulation_many_particles():
         # The velocity components parallel to the connection line are
         # swapped and the components perpendicular to this line remain the same
 
-        dx, dy = dx_dy(p1, p2, self.box[0], self.box[1], pbc=pbc)
+        #dx, dy, distance = self.particle_distances(step_index, particle_index1, particle_index2)
+        #dx_dy(p1, p2, self.box[0], self.box[1], pbc=pbc)
 
         # define the normalised vector along the connection line
-        p = np.array([dx, dy]) / np.sqrt(dx**2 + dy**2)
+        p = np.array([dx, dy]) / distance
         # define the basis transformation matrix B and the inverse
         B = np.array([[p[0], p[1]], [-p[1], p[0]]])
         B_inv = B.transpose()
@@ -128,81 +132,24 @@ class box_simulation_many_particles():
         p2.vx, p2.vy = v2_prime[0], v2_prime[1]
 
 
-    def elastic_collision_wiki(self, p1, p2, pbc=True):
-
-        # to calculate the directions of the velocities after the collision,
-        # one needs to calculate the tangent t along the two particles at the collision point
-        # this can be done by inverting and inserting a factor -1 to the slope s between the
-        # center points of the two particles
-        # ...the calculations are from the german Wikipedia page "Stoß"
-
-        delta_x, delta_y = dx_dy(p1, p2, self.box[0], self.box[1], pbc=pbc)
-        # if delta_x = 0 or delta_y = 0, the collision is equivalent to a collision at the box border
-        if delta_y == 0:
-            p1.vx *= -1
-            p2.vx *= -1
-            return
-
-        if delta_x == 0:
-            p1.vy *= -1
-            p2.vy *= -1
-            return
-
-        # calculating the tangent
-        s = delta_y / delta_x
-        t = -1 / s
-
-        # calculate slope sv1 and sv2 of vectors v1 to p1 and v2 to p2
-        if p1.vx==0:
-            p1.vx=1e-99
-        if p2.vx==0:
-            p2.vx=1e-99
-        sv1 = p1.vy / p1.vx
-        sv2 = p2.vy / p2.vx
-
-        # for each particle, calculate the projections of vx (vy) onto the tangent
-        # and perpendicular to the tanget (on s)
-
-        # particle 1
-        xt1 = p1.vx * (s - sv1) / (s - t)
-        xs1 = p1.vx * (t - sv1) / (t - s)
-
-        yt1 = t * xt1
-        ys1 = s * xs1
-
-        #particle 2
-        xt2 = p2.vx * (s - sv2) / (s - t)
-        xs2 = p2.vx * (t - sv2) / (t - s)
-
-        yt2 = t * xt2
-        ys2 = s * xs2
-
-        # calculate the resulting velocity vectors
-        p1.vx = xt1 + xs2
-        p1.vy = yt1 + ys2
-
-        p2.vx = xt2 + xs1
-        p2.vy = yt2 + ys1
-
     def calculate_distances(self, collide=True, pbc=True, print_dx_dy=False):
         """ method for checking which collisions are taking place """
         # to get the distances of the particles for the calculation of the
         # radial distribution function, store all distances in a numpy array
         # store the distances in an array, all the arrays in one super-array
-        distances = np.array([np.zeros(len(self.particles)-1) for p in self.particles])
+        distances = np.array([np.zeros([3, len(self.particles)]) for p in self.particles])
         for i in range(len(self.particles)):
             counter = 0 
-            for j in range(len(self.particles)):
+            for j in range(i, len(self.particles)):
                 if i==j:
-                    continue
-                dx, dy = dx_dy(self.particles[i], self.particles[j], self.box[0], self.box[1], 
-                               pbc=pbc, verbose=print_dx_dy)
-                distance = np.sqrt(dx**2 + dy**2)
+                    dx, dy, distance = 0, 0, 0
+                else:
+                    dx, dy, distance = dx_dy(self.particles[i], self.particles[j], self.box[0], self.box[1], 
+                                             pbc=pbc, verbose=print_dx_dy)
                 # update the distance entry in the array
-                distances[i][counter] = distance
-                counter += 1
-                if j>i: # these particles were already collided if necessary
-                    continue
+                distances[i][:,j] = [ dx,  dy, distance]
+                distances[j][:,i] = [-dx, -dy, distance]
+
                 # check if the distance between the particles is smaller than 2 times the radius
                 if (distance < (self.particles[i].r + self.particles[j].r) and collide):
                     # distance of particle centers is smaller than the
@@ -237,15 +184,84 @@ class box_simulation_many_particles():
                 (abs(p.y < p.r) and p.vy < 0) or p.y<0 or p.y>self.box[1]:
                 p.reflection_x_axis()
 
+    def LJ_potential_and_force(self, particle_index, step_index,
+                               C_12=9.847044e-6, C_6=6.2647225e-3, cutoff=0.33):
+        """ function that returns the value of the LJ potential and the resulting force for particle i """
+        # initialise a value of 0 for the potential particle i sees and a vector (0,0) for the corresponding force
+        V_i = np.float(0) 
+        F_i = np.array([0, 0])
+
+        for j in range(len(self.particles)):
+            if j == particle_index:
+                continue
+            #print("dx,dy,rij", self.particle_distances[step_index, particle_index][:,j])
+            dx, dy, r_ij = self.particle_distances[step_index, particle_index][:,j]
+            if r_ij < cutoff:
+                dx = dx * cutoff/r_ij
+                dy = dy * cutoff/r_ij
+                r_ij = cutoff
+            V_ij = C_12 / r_ij**12 - C_6 / r_ij**6
+            F_ij = (12 * C_12 / r_ij**13 - 6 * C_6 / r_ij**7) * 1 / r_ij * np.array([dx, dy]) * 1000 
+            #factor 1000 to get the right unit when translated into a velocity
+            # add the force and potential value to the total value
+            V_i += V_ij
+            F_i = F_i + F_ij
+        return V_i, F_i
+
+    def verlet_update_positions(self, particle_index, step_index, dt=1, pbc=True, forces=True):
+        """ function that moves a particle according to the velocity verlet algorithm """
+        p = self.particles[particle_index]
+
+        if step_index==0 or forces==False:
+            V, Fx, Fy = 0, 0, 0
+        else:
+            V, Fx, Fy = self.Lennard_Jones[particle_index, :, step_index-1]
+
+        ax, ay = Fx/p.m , Fy/p.m
+        #print("acceleration in nm/ns**2:", ax, ay)
+        p.x = p.x + p.vx * dt + 0.5 * ax * dt**2
+        p.y = p.y + p.vy * dt + 0.5 * ay * dt**2
+
+        if pbc:
+            p.x = p.x % self.box[0]
+            p.y = p.y % self.box[1]
+
+        self.trajectories[particle_index][0:2,step_index] = \
+                                    [self.particles[particle_index].x,  self.particles[particle_index].y]
+
+    def verlet_update_velocities(self, particle_index, step_index, dt=1, pbc=True, forces=True):
+        p = self.particles[particle_index]
+
+        V, F_x_old, F_y_old, ax, ay = 0, 0, 0, 0, 0
+        F = np.array([0,0])
+
+        if forces and step_index!=0:
+            V_old, F_x_old, F_y_old = self.Lennard_Jones[particle_index, :, step_index-1]
+        ax_old, ay_old = F_x_old / p.m , F_y_old / p.m
+
+        if forces:
+            V, F = self.LJ_potential_and_force(particle_index, step_index)
+            ax, ay = F[0] / p.m , F[1] / p.m
+
+        p.vx = p.vx + 0.5 * (ax_old + ax) * dt
+        p.vy = p.vy + 0.5 * (ay_old + ay) * dt
+
+        self.trajectories[particle_index][2:4,step_index] = \
+                                    [self.particles[particle_index].vx,  self.particles[particle_index].vy]
+        self.Lennard_Jones[particle_index][:,step_index] = [V, F[0], F[1]]
+
 
     def simulate(self, n_particles, particle_radius=0.5, particle_mass=1, steps=2000,
                  particle_velocity=0.5, pbc=True, test_particles=[], step_interval=1,
-                 print_dx_dy=False):
+                 print_dx_dy=False, forces=True, collisions=True):
         """ method to run the simulation and create the trajectories of the particles"""
         self.steps = steps
         self.particle_start_velocity = particle_velocity
         # array of arrays containing the particle trajectories
         self.trajectories = np.array([np.zeros([4,steps]) for i in range(n_particles+len(test_particles))])
+        self.Lennard_Jones = np.array([np.zeros([3,steps]) for i in range(n_particles+len(test_particles))])
+        self.kin_energies = np.array([np.zeros(self.steps) for i in range(n_particles+len(test_particles))])
+        self.pot_energies = np.array([np.zeros(self.steps) for i in range(n_particles+len(test_particles))])
 
         # initialise particle with random position in the box and random velocity direction
         self.particles = []
@@ -257,24 +273,51 @@ class box_simulation_many_particles():
 
         if test_particles != []:
             for particle in test_particles:
-                p = Particle(x=particle[0], y=particle[1], vx=particle[2], vy=particle[3], r=particle[4])
+                p = Particle(x=particle[0], y=particle[1], vx=particle[2], vy=particle[3], m=particle[4])
                 self.particles.append(p)
 
         # create a numpy array containing arrays that store the distances between particles
-        distances_placeholder = np.array([np.zeros(len(self.particles)-1) for p in self.particles])
+        distances_placeholder = np.array([np.zeros([3, len(self.particles)]) for p in self.particles])
         self.particle_distances = np.array([ distances_placeholder for step in range(steps) ])
 
         for i in tqdm(range(steps)):
             #if i!=0: #dont want to collide them already in the start position
-            self.particle_distances[i] = self.calculate_distances(pbc=pbc, print_dx_dy=print_dx_dy)
+            self.particle_distances[i] = self.calculate_distances(pbc=pbc, print_dx_dy=print_dx_dy,
+                                                                  collide=collisions)
             if not pbc:
                 self.check_for_reflection()
 
             # append a copy of the particle to the trajectory
             for j in range(len(self.particles)):
-                self.trajectories[j][:,i] = [self.particles[j].x,  self.particles[j].y, \
-                                             self.particles[j].vx, self.particles[j].vy]
-                move(self.particles[j], self.box[0], self.box[1], dt=step_interval, pbc=pbc)
+                #move(self.particles[j], self.box[0], self.box[1], dt=step_interval, pbc=pbc)
+                self.verlet_update_positions(j, i, dt=step_interval, pbc=pbc, forces=forces)
+            # loop to update all velocities
+            for j in range(len(self.particles)):
+                self.verlet_update_velocities(j, i, dt=step_interval, pbc=pbc, forces=forces)
+
+        self.kin_energies = 0.5 * self.particles[0].m * (self.trajectories[:,2,:]**2 + self.trajectories[:,3,:]**2)
+
+    def plot_energies(self):
+
+        E_kin = np.sum(self.kin_energies, axis=0) / 1000 # to make it kJ/mol
+        E_pot = np.sum(self.Lennard_Jones[:,0,:], axis=0) / 2
+        # set up the figure for the box plot
+        fig, ax1 = plt.subplots()
+        fig.set_figheight(4)
+        fig.set_figwidth(4)
+        #ax1.set_xlim((0, self.box[0]))
+        #ax1.set_ylim((0, self.box[1]))
+
+        ax1.set_xlabel('Time step')
+        ax1.set_ylabel('Energy [kJ/mol]')
+
+        ax1.plot(range(self.steps), E_kin, label=r"$E_{kin}$", color="g")
+        ax1.plot(range(self.steps), E_pot, label=r"$E_{pot}$", color="r")
+        ax1.plot(range(self.steps), E_kin + E_pot, label=r"$E_{kin} + E_{pot}$", color="b")
+        ax1.legend()
+
+        plt.tight_layout()
+        plt.show()
 
     def plot_trajectories(self):
         """ method to plot the trajectories of all particles """
@@ -317,10 +360,10 @@ class box_simulation_many_particles():
             return lines
 
         def animate(i):
-            for j,line in enumerate(lines):
+            for j in range(len(lines)):
                 x = self.trajectories[j][0,i]
                 y = self.trajectories[j][1,i]
-                line.set_data(x, y)
+                lines[j].set_data(x, y)
             return lines
 
         anim = animation.FuncAnimation(fig, animate, init_func=init, \
@@ -335,8 +378,8 @@ class box_simulation_many_particles():
         if end==0:
             end = self.steps
         fig, (ax1, ax2, ax3) = plt.subplots(1, 3)
-        fig.set_figheight(4)
-        fig.set_figwidth(13)
+        fig.set_figheight(3)
+        fig.set_figwidth(15)
 
         ax1.set_xlim((0, self.box[0]))
         ax1.set_ylim((0, self.box[1]))
@@ -363,7 +406,7 @@ class box_simulation_many_particles():
         plt.tight_layout()
         plt.show()
 
-    def velocity_distributions(self, start=0, end="standard", n_bins=50):
+    def velocity_distributions(self, start=0, end="standard", n_bins=50, width_factor=1):
         """ methdo to plot the velocity distributions """
         if end=="standard":
             end = self.steps
@@ -385,22 +428,23 @@ class box_simulation_many_particles():
         vy = np.concatenate([self.trajectories[j][3,start:end] for j in range(len(self.particles))])
         # plot the normalised histograms
         ax1.hist(vx, bins=n_bins, density=1,
-                 range=(-2.5*self.particle_start_velocity, 2.5*self.particle_start_velocity))
+                 range=(-width_factor*self.particle_start_velocity, width_factor*self.particle_start_velocity))
         ax2.hist(vy, bins=n_bins, density=1,
-                 range=(-2.5*self.particle_start_velocity, 2.5*self.particle_start_velocity))
+                 range=(-width_factor*self.particle_start_velocity, width_factor*self.particle_start_velocity))
         v_tot = np.sqrt(vx**2+vy**2)
-        ax3.hist(v_tot, bins=n_bins, density=1, range=(0, 3.1*self.particle_start_velocity))
+        ax3.hist(v_tot, bins=n_bins, density=1, range=(0, 6.1*self.particle_start_velocity))
 
         plt.tight_layout()
         plt.show()
 
-    def radial_distribution_function(self, n_bins=20, dr=0.01, n_linspace=200):
+    def radial_distribution_function(self, n_bins=20, dr=0.01, n_linspace=200, x_offset=5):
         """ method to plot the radial distrib. fuc. """
 
-        n_distances_total = self.steps * len(self.particles) * (len(self.particles) -1)
-        distances_time_average = np.reshape(self.particle_distances, n_distances_total)
+        distances_time_average = self.particle_distances[:,:,2,:].flatten()
+        mask = (distances_time_average != 0) #remove entires with distance=0
+        distances_time_average = distances_time_average[mask]
 
-        r_linspace = np.linspace(dr, self.box[0]/2, n_linspace)
+        r_linspace = np.linspace(x_offset*dr, self.box[0]/2, n_linspace)
 
         def g(r, dr=dr):
             dn = np.zeros(len(r))

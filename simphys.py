@@ -43,8 +43,9 @@ class Particle:
     def reflection_y_axis(self):
         self.vx *= -1
 
-# function for the movement of a particle    
-def move(p, box_length_x, box_length_y, dt=1, pbc=True):
+
+def move_gauss_integrator(p, box_length_x, box_length_y, dt=1, pbc=True):
+    """ function for the movement of a particle """
     if pbc:
         p.x = (p.x + p.vx*dt) % box_length_x
         p.y = (p.y + p.vy*dt) % box_length_y
@@ -53,7 +54,9 @@ def move(p, box_length_x, box_length_y, dt=1, pbc=True):
         p.y = (p.y + p.vy*dt)
     return p    
 
+
 def dx_dy(p1, p2, box_length_x, box_length_y, pbc=True, verbose=False):
+    """ function to calculate the shortest distance between two particles """
     dx = p1.x - p2.x
     dy = p1.y - p2.y
     if pbc:
@@ -77,18 +80,21 @@ def dx_dy(p1, p2, box_length_x, box_length_y, pbc=True, verbose=False):
         print("dx =", dx, ", dy =", dy)
     return dx, dy, d
 
+
 def Lennard_Jones(r, C_12=9.847044e-6, C_6=6.2647225e-3, cutoff=0.33):
     return C_12 / r**12 - C_6 / r**6
+
 
 def Lennard_Jones_force(r, dx, dy, C_12=9.847044e-6, C_6=6.2647225e-3, cutoff=0.33):
     return (12 * C_12 / r**13 - 6 * C_6 / r**7) * 1 / r * np.array([dx, dy])
 
-""">>>>>> simulation class <<<<<<<"""
 
-class box_simulation_many_particles():
+""">>>>>>>>>>>>>>>>>>> simulation class <<<<<<<<<<<<<<<<<"""
+
+class box_simulation_many_particles(box_x=50, box_y=50):
 
     def __init__(self):
-        self.box = [50,50]
+        self.box = [box_x, box_y]
         self.trajectories = []
         self.particles = []
         self.steps = 2000
@@ -100,95 +106,22 @@ class box_simulation_many_particles():
     def init_box(self, x, y):
         self.box = [x, y]
 
-    def elastic_collision(self, p1, p2, pbc=True):
-
-        # to calculate the velocity vectors of the two colliding particles
-        # perform a basis transformation to a basis with one basis-vector
-        # pointing along the connection line between p1 and p2 and the other
-        # being perpendicular to that line.
-        # The velocity components parallel to the connection line are
-        # swapped and the components perpendicular to this line remain the same
-
-        # define the normalised vector along the connection line
-        p = np.array([dx, dy]) / distance
-        # define the basis transformation matrix B and the inverse
-        B = np.array([[p[0], p[1]], [-p[1], p[0]]])
-        B_inv = B.transpose()
-        #print(np.dot(B, B_inv))
-
-        v1 = np.array([p1.vx, p1.vy])
-        v2 = np.array([p2.vx, p2.vy])
-        v1_transformed = np.dot(B, v1)
-        v2_transformed = np.dot(B, v2)
-        # store the parallel components
-        v1_parallel = v1_transformed[0]
-        v2_parallel = v2_transformed[0]
-        # print("Parallel components:", v1_parallel, v2_parallel)
-        # update the velocity vectors, swap parallel component
-        v1_transformed[0] = v2_parallel
-        v2_transformed[0] = v1_parallel
-        # transform the new vectors back in the original basis
-        v1_prime = np.dot(B_inv, v1_transformed)
-        v2_prime = np.dot(B_inv, v2_transformed)
-        # update the velicity in the particle objects
-        p1.vx, p1.vy = v1_prime[0], v1_prime[1]
-        p2.vx, p2.vy = v2_prime[0], v2_prime[1]
-
-
-    def calculate_distances(self, collide=True, pbc=True, print_dx_dy=False):
-        """ method for checking which collisions are taking place """
-        # to get the distances of the particles for the calculation of the
-        # radial distribution function, store all distances in a numpy array
-        # store the distances in an array, all the arrays in one super-array
+    def calculate_distances(self, step_index, pbc=True):
+        """ method for calculating all distances between particles at a given step"""
+        # store all distances in a numpy array
         distances = np.zeros([self.n_particles, self.n_particles, 3])
         for i in range(self.n_particles):
-            counter = 0 
             for j in range(i+1, self.n_particles):
-
                 dx, dy, distance = dx_dy(self.particles[i], self.particles[j], self.box[0], self.box[1], 
-                                             pbc=pbc, verbose=print_dx_dy)
-
+                                             pbc=pbc)
                 # update the distance entry in the array
                 distances[i, j, :] = [ dx,  dy, distance]
                 distances[j, i, :] = [-dx, -dy, distance]
 
-                # check if the distance between the particles is smaller than 2 times the radius
-                if (distance < (self.particles[i].r + self.particles[j].r) and collide):
-                    # distance of particle centers is smaller than the
-                    # sum of the two radi
-
-                    # also check if the particles are moving away from each other
-                    # -> then they should not collide (this is the case if
-                    #    particles collided in the previous simulation step but
-                    #    are still not far enough away from each other)
-                    #    therefore, project the velocity vectors onto the connection line
-                    #    between the two particles
-                    # print("distance = ", distance)
-                    if ((self.particles[i].vx * dx + \
-                         self.particles[i].vy * dy) > 0 and\
-                        (self.particles[j].vx * dx + \
-                         self.particles[j].vy * dy) < 0):
-                        #print("no collision, because moving away from each other", "distance:", distance,
-                                #"dx", dx, "dy", dy)
-                        pass
-                    else:
-                        self.elastic_collision(self.particles[i], self.particles[j])
-        return distances
-
-    def check_for_reflection(self):
-        """ method for checking if a reflection at a border is taking place """
-        for p in self.particles:
-            # check for reflection
-            if ((abs(p.x - self.box[0]) < p.r) and p.vx>0) or \
-                (abs(p.x < p.r) and p.vx < 0) or p.x<0 or p.x>self.box[0]:
-                p.reflection_y_axis()
-            if ((abs(p.y - self.box[1]) < p.r) and p.vy>0) or \
-                (abs(p.y < p.r) and p.vy < 0) or p.y<0 or p.y>self.box[1]:
-                p.reflection_x_axis()
+        self.particle_distances[:, :, :, step_index] = distances
 
     def calculate_LJ_potential_and_force(self, step_index, C_12=9.847044e-6, C_6=6.2647225e-3, cutoff=0.33):
         """ function that calculates the matrix of LJ potentials and forces between all particles """
-
         for i in range(self.n_particles):
             for j in range(i+1, self.n_particles):
 
@@ -206,7 +139,7 @@ class box_simulation_many_particles():
                 self.Lennard_Jones_matrix[i, j, :, step_index] = [V_ij,  F_ij[0],  F_ij[1]]
                 self.Lennard_Jones_matrix[j, i, :, step_index] = [V_ij, -F_ij[0], -F_ij[1]]
 
-    def verlet_update_position(self, particle_index, step_index, dt=1, pbc=True, forces=True):
+    def verlet_update_position(self, particle_index, step_index, dt=1, pbc=True):
         """ function that moves a particle according to the velocity verlet algorithm """
         p = self.particles[particle_index]
 
@@ -225,7 +158,7 @@ class box_simulation_many_particles():
         self.trajectories[particle_index, 0:2, step_index+1] = [self.particles[particle_index].x,\
                                                                self.particles[particle_index].y]
 
-    def verlet_update_velocities(self, particle_index, step_index, dt=1, pbc=True, forces=True):
+    def verlet_update_velocities(self, particle_index, step_index, dt=1, pbc=True):
         p = self.particles[particle_index]
 
         V  = np.sum(self.Lennard_Jones_matrix[particle_index, :, 0, step_index])
@@ -247,7 +180,7 @@ class box_simulation_many_particles():
 
     def simulate(self, n_particles, particle_radius=0.5, particle_mass=0.018, steps=2000,
                  particle_velocity=0.5, pbc=True, test_particles=[], step_interval=1,
-                 print_dx_dy=False, forces=True, collisions=False):
+                 collisions=False):
         """ method to run the simulation and create the trajectories of the particles"""
         self.steps = steps
         self.particle_start_velocity = particle_velocity
@@ -278,23 +211,20 @@ class box_simulation_many_particles():
                                                         self.particles[particle_index].y,
                                                         self.particles[particle_index].vx,
                                                         self.particles[particle_index].vy]
-        self.particle_distances[:, :, :, 0] = self.calculate_distances(pbc=pbc, print_dx_dy=print_dx_dy, collide=collisions)
+        self.calculate_distances(0, pbc=pbc)
         self.calculate_LJ_potential_and_force(0)
 
         # >>>> simulation <<<<
         for step in tqdm(range(steps)):
-
             # loop to update all positions
             for particle in range(self.n_particles):
-                self.verlet_update_position(particle, step, dt=step_interval, pbc=pbc, forces=forces)
-            
+                self.verlet_update_position(particle, step, dt=step_interval, pbc=pbc)
             # calculate the new values of the LJ potential and force
-            self.particle_distances[:, :, :, step+1] = self.calculate_distances(pbc=pbc, print_dx_dy=print_dx_dy, collide=collisions)
+            self.calculate_distances(step+1, pbc=pbc)
             self.calculate_LJ_potential_and_force(step+1)
-
             # loop to update all velocities
             for particle in range(self.n_particles):
-                self.verlet_update_velocities(particle, step, dt=step_interval, pbc=pbc, forces=forces)
+                self.verlet_update_velocities(particle, step, dt=step_interval, pbc=pbc)
 
         self.kin_energies = 0.5 * self.particles[0].m * (self.trajectories[:,2,:]**2 + self.trajectories[:,3,:]**2)
 
@@ -329,8 +259,6 @@ class box_simulation_many_particles():
         ax1.axhline(E_tot[0], ls="--", color="b")
         ax1.legend()
 
-        #ax2.plot(range(1, self.steps), E_kin_diff, label=r"$\Delta E_{kin}$", color="g")
-        #ax2.plot(range(1, self.steps), E_pot_diff, label=r"$\Delta E_{pot}$", color="r")
         ax2.plot(time_range[1:], E_tot_diff, label=r"$E_{tot}(t+\Delta t) - E_{tot}(t)$", color="b")
         ax2.axhline(0, ls="--", color="b")
         ax2.legend()

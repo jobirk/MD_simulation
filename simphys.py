@@ -45,68 +45,58 @@ class Particle:
         self.vx *= -1
 
 
-def move_gauss_integrator(p, box_length_x, box_length_y, dt=1, pbc=True):
-    """ function for the movement of a particle """
-    if pbc:
-        p.x = (p.x + p.vx*dt) % box_length_x
-        p.y = (p.y + p.vy*dt) % box_length_y
-    else:
-        p.x = (p.x + p.vx*dt)
-        p.y = (p.y + p.vy*dt)
-    return p    
-
 def distance_pbc_transformation(distance, box_length):
     """ calculates the distance dx or dy with respect to periodic
         boundary conditions """
     return (distance + (box_length / 2)) % box_length - (box_length / 2)
 
-
-def Lennard_Jones(r, C_12=9.847044e-6, C_6=6.2647225e-3, cutoff=0.33):
-    return C_12 / r**12 - C_6 / r**6
-
-
-def Lennard_Jones_force(r, dx, dy, C_12=9.847044e-6, C_6=6.2647225e-3, 
-                        cutoff=0.33):
-    return (12 * C_12 / r**13 - 6 * C_6 / r**7) * 1 / r * np.array([dx, dy])
-
 def Lennard_Jones_force(r, dx, dy, C_12=9.847044e-6, C_6=6.2647225e-3, \
-                        cutoff=0.33):
+                        cutoff=0.33, use_cutoff=True):
     dx_values = np.copy(dx)
     dy_values = np.copy(dy)
     r_values  = np.copy(r)
 
     #dirty workaround to avoid division by zero
-    r_values[np.where(r_values==0)] = 42e42 
+    r_values[np.where(r_values==0)] = 42e10
 
-    # for distances below the cutoff we want assign them the same force
-    # Therefore, adjust the dx, dy, r appropriately
-    cutoff_indices = np.where(r<cutoff)
-    dx_values[cutoff_indices] = dx_values[cutoff_indices] * \
-                                cutoff/r_values[cutoff_indices]
-    dy_values[cutoff_indices] = dy_values[cutoff_indices] * \
-                                cutoff/r_values[cutoff_indices]
-    r_values[cutoff_indices] = cutoff
+    if use_cutoff==True:
+        # for distances below the cutoff we want assign them the same force
+        # Therefore, adjust the dx, dy, r appropriately
+        
+        cutoff_indices = np.where(r<cutoff)
+        dx_values[cutoff_indices] = dx_values[cutoff_indices] * \
+                                    cutoff/r_values[cutoff_indices]
+        dy_values[cutoff_indices] = dy_values[cutoff_indices] * \
+                                    cutoff/r_values[cutoff_indices]
+        r_values[cutoff_indices] = cutoff
 
     F = (12 * C_12 / r_values**13 - 6 * C_6 / r_values**7) \
         * 1 / r_values * np.array([dx_values, dy_values])
     return F
 
-def Lennard_Jones(r, C_12=9.847044e-6, C_6=6.2647225e-3, cutoff=0.33):
+def Lennard_Jones(r, C_12=9.847044e-6, C_6=6.2647225e-3, cutoff=0.33, \
+                  use_cutoff=True):
+    """ function that calculates an array of V_ij values corresponding to a
+        distance array containing r_ij values (distances) """
+    # the distance array usually contains entries with r=0, e.g. r_11
+    # but we only want to use the non-zero entries for the calculation
     non_diagonal_indices = np.where(r!=0)
     V = np.zeros(r.shape)
     V[non_diagonal_indices] = \
         C_12 / r[non_diagonal_indices]**12 - C_6 / r[non_diagonal_indices]**6
     LJ_cutoff = C_12 / cutoff**12 - C_6 / cutoff**6
 
-    # correct the values below the cutoff
-    cutoff_indices = np.where(r<cutoff)
-    # this is the potential if assuming a 
-    # constant slope for r < cutoff
-    V[cutoff_indices] = LJ_cutoff + \
-        Lennard_Jones_force(np.array([cutoff]), np.array([cutoff]), 
-                            np.array([0]))[0] * (cutoff-r[cutoff_indices]) 
-    diagonal_indices = np.where(r==0)
-    V[diagonal_indices] = 0
+    if use_cutoff==True:
+        # correct the values below the cutoff
+        cutoff_indices = np.where(r<cutoff)
+        # this is the potential if assuming a 
+        # constant slope for r < cutoff
+        V[cutoff_indices] = LJ_cutoff + \
+            Lennard_Jones_force(np.array([cutoff]), np.array([cutoff]), 
+                                np.array([0]))[0] * (cutoff-r[cutoff_indices]) 
+        diagonal_indices = np.where(r==0)
+        V[diagonal_indices] = 0
+
     return V
 
 
@@ -114,8 +104,9 @@ def Lennard_Jones(r, C_12=9.847044e-6, C_6=6.2647225e-3, cutoff=0.33):
 
 class box_simulation_many_particles():
 
-    def __init__(self, box_x=50, box_y=50):
+    def __init__(self, n_particles=50, box_x=50, box_y=50):
         self.box = [box_x, box_y]
+        self.n_particles = n_particles
         self.trajectories = []
         self.particles = []
         self.steps = 2000
@@ -126,6 +117,30 @@ class box_simulation_many_particles():
 
     def init_box(self, x, y):
         self.box = [x, y]
+
+    def generate_particles(self, particle_radius=1, v=1, m=1, 
+                           filename="no_filename.txt", load_positions=False):
+        particles = []
+        if load_positions:
+            with open(filename, "r") as file:
+                traj = np.loadtxt(file, dtype=float, comments=["@","#"])
+                print("Looking for file '%s'"%(filename))
+                print("The loaded initial state is: \n", traj)
+                for i in range(len(traj)):
+                    p = Particle(traj[i,0], traj[i,1], traj[i,2], traj[i,3])
+                    particles.append(p)
+        else:
+            with open(filename, "w") as file:
+                print("Writing initial state to file '%s'"%(filename))
+                for i in range(self.n_particles):
+                    p = Particle(r=particle_radius, m=m)
+                    p.random_position(0, self.box[0], 0, self.box[1])
+                    p.random_velocity(v)
+                    particles.append(p)
+                    file.write("{:3.8f} {:3.8f} {:3.8f} {:3.8f}\n".format(\
+                                                    p.x, p.y, p.vx, p.vy))
+        return particles
+
 
     def calculate_distances(self, step_index, pbc=True):
         """ method for calculating all distances between particles at a step"""
@@ -146,20 +161,22 @@ class box_simulation_many_particles():
         self.particle_distances[:, :, 2, step_index] = r 
 
     def calculate_LJ_potential_and_force(self, step_index, C_12=9.847044e-6, 
-                                         C_6=6.2647225e-3, cutoff=0.33):
+                                         C_6=6.2647225e-3, cutoff=0.33, use_cutoff=True):
         """ function that calculates the matrix of LJ potentials 
             and forces between all particles """
         self.Lennard_Jones_matrix[:, :, 0, step_index] = \
-                Lennard_Jones(self.particle_distances[:, :, 2, step_index])
+                Lennard_Jones(self.particle_distances[:, :, 2, step_index], 
+                              use_cutoff=use_cutoff)
         self.Lennard_Jones_matrix[:, :, 1, step_index] = \
             Lennard_Jones_force(self.particle_distances[:, :, 2, step_index], 
                                 self.particle_distances[:, :, 0, step_index],
-                                self.particle_distances[:, :, 1, step_index])[0]
+                                self.particle_distances[:, :, 1, step_index], 
+                                use_cutoff=use_cutoff)[0]
         self.Lennard_Jones_matrix[:, :, 2, step_index] = \
             Lennard_Jones_force(self.particle_distances[:, :, 2, step_index], 
                                 self.particle_distances[:, :, 0, step_index],
-                                self.particle_distances[:, :, 1, step_index])[1]
-
+                                self.particle_distances[:, :, 1, step_index],
+                                use_cutoff=use_cutoff)[1]
 
     def verlet_update_positions(self, step_index, dt=1, pbc=True):
         """ function that moves a particle according to the 
@@ -203,14 +220,16 @@ class box_simulation_many_particles():
         self.trajectories[:, 3, step_index+1] = \
                 self.trajectories[:, 3, step_index] + 0.5 * (ay + ay_new) * dt
 
-    def simulate(self, n_particles, particle_radius=0.5, particle_mass=0.018, 
+    def simulate(self, particle_radius=0.5, particle_mass=0.018, 
                  steps=2000, particle_velocity=0.5, pbc=True, test_particles=[], 
-                 step_interval=1):
+                 step_interval=1, load_initialisation=False):
         """ method to run the simulation and create the trajectories """
         self.steps = steps
         self.particle_start_velocity = particle_velocity
-        self.n_particles = n_particles + len(test_particles)
+        # update n_particles in case some specific test_particles are given
+        self.n_particles = self.n_particles + len(test_particles)
 
+        # set up the arrays to save the simulation
         self.trajectories         = np.zeros([self.n_particles, 4, self.steps+1])
         self.Lennard_Jones_matrix = np.zeros([self.n_particles, \
                                               self.n_particles, 3, self.steps+1])
@@ -220,12 +239,10 @@ class box_simulation_many_particles():
                                               self.n_particles, 3, self.steps+1])
 
         # initialise particle with random (x,y) and v direction 
-        self.particles = []
-        for i in range(n_particles):
-            p = Particle(r=particle_radius, m=particle_mass)
-            p.random_position(0, self.box[0], 0, self.box[1])
-            p.random_velocity(particle_velocity)
-            self.particles.append(p)
+        self.particles = self.generate_particles(particle_radius,
+                           v=particle_velocity, m=particle_mass, 
+                           filename="particle_positions.txt", 
+                           load_positions=load_initialisation)
 
         if test_particles != []:
             for particle in test_particles:

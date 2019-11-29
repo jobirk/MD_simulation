@@ -52,6 +52,7 @@ def distance_pbc_transformation(distance, box_length):
 
 def Lennard_Jones_force(r, dx, dy, C_12=9.847044e-6, C_6=6.2647225e-3, \
                         cutoff=0.33, use_cutoff=True):
+    """ Lennard Jones Force in N/mol """
     dx_values = np.copy(dx)
     dy_values = np.copy(dy)
     r_values  = np.copy(r)
@@ -76,8 +77,8 @@ def Lennard_Jones_force(r, dx, dy, C_12=9.847044e-6, C_6=6.2647225e-3, \
 
 def Lennard_Jones(r, C_12=9.847044e-6, C_6=6.2647225e-3, cutoff=0.33, \
                   use_cutoff=True):
-    """ function that calculates an array of V_ij values corresponding to a
-        distance array containing r_ij values (distances) """
+    """ function that calculates an array of V_ij values (in J/mol) corresponding 
+        to a distance array containing r_ij values (distances) """
     # the distance array usually contains entries with r=0, e.g. r_11
     # but we only want to use the non-zero entries for the calculation
     non_diagonal_indices = np.where(r!=0)
@@ -120,8 +121,7 @@ class box_simulation():
     def init_box(self, x, y):
         self.box = [x, y]
 
-    def generate_particles(self, test_particles=[],
-                           particle_radius=1, v=1, m=1, 
+    def generate_particles(self, test_particles=[], particle_radius=1, v=1, m=1, 
                            filename="no_filename.txt", load_from_file=False):
         self.n_particles += len(test_particles)
         particles = []
@@ -180,8 +180,7 @@ class box_simulation():
         self.particle_distances[:, :, 1, step_index] = dy
         self.particle_distances[:, :, 2, step_index] = r 
 
-    def calculate_LJ_potential_and_force(self, step_index, C_12=9.847044e-6, 
-                                         C_6=6.2647225e-3, cutoff=0.33, use_cutoff=True):
+    def calculate_LJ_potential_and_force(self, step_index, use_cutoff=True):
         """ function that calculates the matrix of LJ potentials 
             and forces between all particles """
         self.Lennard_Jones_matrix[:, :, 0, step_index] = \
@@ -226,14 +225,14 @@ class box_simulation():
         m = self.particles[0].m
         # sum potential and forces along one (the second) particle index
         V  = np.sum(self.Lennard_Jones_matrix[:, :, 0, step_index], axis=1)
-        Fx = np.sum(self.Lennard_Jones_matrix[:, :, 1, step_index], axis=1)
-        Fy = np.sum(self.Lennard_Jones_matrix[:, :, 2, step_index], axis=1)
+        Fx = np.sum(self.Lennard_Jones_matrix[:, :, 1, step_index], axis=1)*1000
+        Fy = np.sum(self.Lennard_Jones_matrix[:, :, 2, step_index], axis=1)*1000
 
         V_new  = np.sum(self.Lennard_Jones_matrix[:, :, 0, step_index+1], axis=1)
-        Fx_new = np.sum(self.Lennard_Jones_matrix[:, :, 1, step_index+1], axis=1)
-        Fy_new = np.sum(self.Lennard_Jones_matrix[:, :, 2, step_index+1], axis=1)
+        Fx_new = np.sum(self.Lennard_Jones_matrix[:, :, 1, step_index+1], axis=1)*1000
+        Fy_new = np.sum(self.Lennard_Jones_matrix[:, :, 2, step_index+1], axis=1)*1000
 
-        ax, ay, ax_new, ay_new = Fx/m*1000 , Fy/m*1000, Fx_new/m*1000 , Fy_new/m*1000
+        ax, ay, ax_new, ay_new = Fx/m , Fy/m, Fx_new/m , Fy_new/m
 
         self.trajectories[:, 2, step_index+1] = \
                 self.trajectories[:, 2, step_index] + 0.5 * (ax + ax_new) * dt

@@ -93,16 +93,18 @@ class box_simulation():
             to save the simulation result. """
 
         if load_from_file:
-            traj_from_file = np.loadtxt(load_from_file, dtype=float, comments=["@","#"])
+            traj_from_file = np.loadtxt(load_from_file, dtype=float)
             self.n_particles = traj_from_file.shape[0]
             self.trajectories = np.zeros([self.n_particles, 4, self.steps+1])
             self.trajectories[:,:,0] = traj_from_file
-            print("The initial state is loaded from the file '%s'"%(load_from_file))
+            print("The initial state is loaded from the file '%s'" \
+                  %(load_from_file))
 
         else:
             # generate the new particles with random numbers
             n_random = self.n_particles
-            self.n_particles += len(test_particles) #total number including test particles
+            #total number incl. test particles
+            self.n_particles += len(test_particles) 
             self.trajectories = np.zeros([self.n_particles, 4, self.steps+1])
 
             positions = np.random.uniform(0, self.box[0], (2, n_random))
@@ -121,16 +123,17 @@ class box_simulation():
 
         # also setup the necessary arrays to save the simulaiton
         self.particle_distances   = np.zeros([self.n_particles, \
-                                              self.n_particles, 3, self.steps+1])
+                                            self.n_particles, 3, self.steps+1])
         self.Lennard_Jones_matrix = np.zeros([self.n_particles, \
-                                              self.n_particles, 3, self.steps+1])
+                                            self.n_particles, 3, self.steps+1])
         self.kin_energies         = np.zeros([self.n_particles, self.steps+1])
         self.pot_energies         = np.zeros([self.n_particles, self.steps+1])
 
     def save_particle_positions(self, step, filename="no_filename.txt"):
         """ method to save the particle positions at given step to file """
         np.savetxt(filename, self.trajectories[:,:,step])
-        print("Save the particle positions of step %i to file '%s'" %(step,filename))
+        print("Saved the particle positions of step %i to file '%s'" \
+               %(step,filename))
 
     def calculate_distances(self, step_index):
         """ method for calculating all distances between particles at a step"""
@@ -201,9 +204,11 @@ class box_simulation():
         Fx = np.sum(self.Lennard_Jones_matrix[:, :, 1, step_index], axis=1)*1000
         Fy = np.sum(self.Lennard_Jones_matrix[:, :, 2, step_index], axis=1)*1000
 
-        V_new  = np.sum(self.Lennard_Jones_matrix[:, :, 0, step_index+1], axis=1)
-        Fx_new = np.sum(self.Lennard_Jones_matrix[:, :, 1, step_index+1], axis=1)*1000
-        Fy_new = np.sum(self.Lennard_Jones_matrix[:, :, 2, step_index+1], axis=1)*1000
+        V_new  = np.sum(self.Lennard_Jones_matrix[:,:,0, step_index+1],axis=1)
+        Fx_new = np.sum(self.Lennard_Jones_matrix[:,:,1, step_index+1],axis=1) \
+                 *1000
+        Fy_new = np.sum(self.Lennard_Jones_matrix[:,:,2, step_index+1],axis=1) \
+                 *1000
 
         ax, ay, ax_new, ay_new = Fx/m , Fy/m, Fx_new/m , Fy_new/m
 
@@ -212,11 +217,11 @@ class box_simulation():
         self.trajectories[:, 3, step_index+1] = \
                 self.trajectories[:, 3, step_index] + 0.5 * (ay + ay_new) * dt
 
-    def simulate_MD(self, step_interval=1):
+    def simulate_MD(self, step_interval=1, use_cutoff=True):
         """ method to run the simulation and create the trajectories """
 
         self.calculate_distances(0)
-        self.calculate_LJ_potential_and_force(0)
+        self.calculate_LJ_potential_and_force(0, use_cutoff=use_cutoff)
 
         # >>>> simulation <<<<
         for step in tqdm(range(self.steps)):
@@ -224,7 +229,7 @@ class box_simulation():
             self.verlet_update_positions(step, dt=step_interval)
             # calculate the new values of the LJ potential and force
             self.calculate_distances(step+1)
-            self.calculate_LJ_potential_and_force(step+1, use_cutoff=True)
+            self.calculate_LJ_potential_and_force(step+1, use_cutoff=use_cutoff)
             # update all velocities
             self.verlet_update_velocities(step, dt=step_interval)
 
@@ -249,10 +254,12 @@ class box_simulation():
     
     def move(self, step, r_x, r_y, length=0.05):
         """ moves all particles along r """
-        self.trajectories[:, 0, step+1] = (self.trajectories[:, 0, step] + r_x*length) % self.box[0]
-        self.trajectories[:, 1, step+1] = (self.trajectories[:, 1, step] + r_y*length) % self.box[1]
+        self.trajectories[:, 0, step+1] = (self.trajectories[:, 0, step] + \
+                                           r_x*length) % self.box[0]
+        self.trajectories[:, 1, step+1] = (self.trajectories[:, 1, step] + \
+                                           r_y*length) % self.box[1]
 
-    def simulate_SD(self, step_interval=1, step_length=0.01):
+    def simulate_SD_old(self, step_interval=1, step_length=0.01):
         r = self.calc_F_direction(0)
         E_1 = self.E_pot(0)
         E_2 = E_1 - 1
@@ -296,7 +303,9 @@ class box_simulation():
         print("counts_else:", counts_else, "steps total:", step) 
         plt.plot(range(len(E_1_minus_E_2)-1), E_1_minus_E_2[1:])
 
-    def simulate_SD2(self, step_interval=1, step_length=0.01):
+    def run_SD(self, step_length=0.01, plot_from=False):
+        """ method to run the minimisation of the total potential energy of
+            the system using the method of steepest descent """
 
         step = 0
         run_loop = True
@@ -308,11 +317,11 @@ class box_simulation():
         E_2 = E_1 - 1
         counter_E1_larger_E2 = 0
 
-        while run_loop and step<self.steps-3:
+        while run_loop and step<self.steps:
 
             continue_moving = True
 
-            while continue_moving and step<self.steps-2:
+            while continue_moving and step<self.steps:
                 self.move(step, r[0], r[1], length=step_length)
                 self.calculate_distances(step+1)
                 self.calculate_LJ_potential_and_force(step+1, use_cutoff=False)
@@ -332,21 +341,42 @@ class box_simulation():
 
         print("counts E1 > E2:", counter_E1_larger_E2, "steps total:", step) 
         steps = range(len(E_1_minus_E_2))
-        plot_from = 10
-        plt.plot(steps[plot_from:], E_1_minus_E_2[plot_from:])
-        plt.axvline(0, color="g")
+
+        if plot_from:
+            """ plot the evolution of the total potential energy and the
+                difference E_1 - E_2 for each iteration step """
+            E_pot = np.sum(self.Lennard_Jones_matrix[:,:,0,:], axis=(0,1)) / 2
+            fig, (ax1, ax2) = plt.subplots(1, 2)
+            fig.set_figheight(4)
+            fig.set_figwidth(13)
+
+            ax1.set_xlabel(r"simulation step")
+            ax1.set_ylabel('Energy [kJ/mol]')
+            ax1.set_title("Evolution of potential energy")
+            ax2.set_title(r"Energy difference $E_1 - E_2$")
+            ax2.set_ylabel(r"$E_1 - E_2$")
+            ax2.set_xlabel(r"simulation step")
+
+            ax1.plot(range(plot_from,len(E_pot)), E_pot[plot_from:], label=r"$E_{pot}$", color="r")
+            ax2.plot(steps[plot_from:], E_1_minus_E_2[plot_from:], 
+                     label=r"$E_1 - E_2$")
+            ax2.axhline(0, color="g")
+
+            ax1.legend()
+            ax2.legend()
+
+            plt.tight_layout()
+            plt.show()
 
     def plot_energies(self):
         E_kin = np.sum(self.kin_energies, axis=0) / 1000 # to make it kJ/mol
         E_pot = np.sum(self.Lennard_Jones_matrix[:,:,0,:], axis=(0,1)) / 2
-        #print("E_pot array:", E_pot)
-        E_tot = E_kin + E_pot
-        E_diff = E_kin - E_pot
         # divide by two because otherwise all values are double counted
         E_kin_diff = E_kin[1:] - E_kin[:-1]
         E_pot_diff = E_pot[1:] - E_pot[:-1]
+        E_tot = E_kin + E_pot
+        E_diff = E_kin - E_pot
         E_tot_diff = E_kin_diff + E_pot_diff
-        E_tot_diff2 = E_tot[1:] - E_tot[:-1]
         # set up the figure for the box plot
         fig, (ax1, ax2) = plt.subplots(1, 2)
         fig.set_figheight(4)
@@ -361,10 +391,10 @@ class box_simulation():
 
         time_range = np.arange(self.steps+1) * 2e-6 #time in ns
 
-        #ax1.plot(time_range, E_kin, label=r"$E_{kin}$", color="g")
-        ax1.plot(range(10,len(E_pot)), E_pot[10:], label=r"$E_{pot}$", color="r")
-        #ax1.plot(time_range, E_tot, label=r"$E_{kin} + E_{pot}$", color="b")
-        #ax1.axhline(E_tot[0], ls="--", color="b")
+        ax1.plot(time_range, E_kin, label=r"$E_{kin}$", color="g")
+        ax1.plot(time_range, E_pot, label=r"$E_{pot}$", color="r")
+        ax1.plot(time_range, E_tot, label=r"$E_{kin} + E_{pot}$", color="b")
+        ax1.axhline(E_tot[0], ls="--", color="b")
         ax1.legend()
 
         ax2.plot(time_range[1:], E_tot_diff, label=r"$E_{tot}(t+\Delta t) - E_{tot}(t)$", color="b")
@@ -499,16 +529,14 @@ class box_simulation():
         mask = (distances_time_average != 0) #remove entiries with distance=0
         distances_time_average = distances_time_average[mask]
 
-        r_linspace = np.linspace(x_offset*dr, self.box[0]/2, n_linspace)
+        r_linspace = np.linspace(0, self.box[0]/2, n_bins)
 
-        def g(r, dr=dr):
-            dn = np.zeros(len(r))
-            rho = self.n_particles / (self.box[0] * self.box[1])
-            for i in tqdm(range(len(r))):
-                dn[i] = len(distances_time_average[(r[i]<distances_time_average) & (distances_time_average<(r[i]+dr))])
-            return 1 / (2 * np.pi * r * rho) * dn / dr * 1 / (self.steps * self.n_particles)
-
-        g_r_linspace = g(r_linspace)
+        dn, bin_edges = np.histogram(distances_time_average, bins=n_bins, \
+                                     range=(r_linspace[0], r_linspace[-1]))
+        dr = self.box[0] / 2 / (n_bins-1)
+        rho = self.n_particles / (self.box[0] * self.box[1])
+        g_r =  1 / (2 * np.pi * r_linspace[1:] * rho) * dn[1:] / dr \
+               * 1 / (self.steps * self.n_particles)
 
         fig, (ax1, ax2) = plt.subplots(1, 2)
         fig.set_figheight(4)
@@ -520,9 +548,9 @@ class box_simulation():
         ax1.set_title(r"Distribution of distances")
         ax2.set_title(r"Time and particle averaged RDF")
         ax1.hist(distances_time_average, bins=n_bins)
-        ax2.plot(r_linspace, g_r_linspace)
+        ax2.plot(r_linspace[1:], g_r)
         plt.tight_layout()
         plt.show()
 
-        return r_linspace, g_r_linspace
+        return r_linspace[1:], g_r
 

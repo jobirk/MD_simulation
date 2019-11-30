@@ -5,48 +5,11 @@ from matplotlib import animation, rc
 from IPython.display import HTML
 from tqdm import tqdm
 import time
-
-class Particle:
-
-    def __init__(self, x=0, y=0, vx=0, vy=0, ax=0, ay=0, m=1, r=0.5):
-        self.x = x
-        self.y = y
-        self.vx = vx
-        self.vy = vy
-        self.ax = ax
-        self.ay = ay
-        self.r = r
-        self.m = m
-
-    def __repr__(self):
-        return str("This is a particle at %0.2f, %0.2f with v=%0.2f,%0.2f, \
-                   v_tot=%0.8f" %(self.x, self.y, self.vx, self.vy, \
-                   np.sqrt(self.vx**2 + self.vy**2)))
-
-    def random_position(self, x_min=0, x_max=1, y_min=0, y_max=1):
-        # method to set a random position for the particle in 
-        # [x_min, x_max] and [y_min, y_max]
-        self.x = np.random.uniform(x_min, x_max)
-        self.y = np.random.uniform(y_min, y_max)
-
-    def random_velocity(self, v_total = 1):
-        # method to set a random velocity vector to the particle. 
-        # The absolut value of the velocity can be chosen
-        phi = np.random.uniform(0, 2*np.pi)
-        self.vx = v_total * np.cos(phi)
-        self.vy = v_total * np.sin(phi)
-    
-    # two methods which switch the sign of the x/y velocity if 
-    # the particle is reflected at the y/x axis
-    def reflection_x_axis(self):
-        self.vy *= -1
-    
-    def reflection_y_axis(self):
-        self.vx *= -1
+import sys
 
 
 def distance_pbc_transformation(distance, box_length):
-    """ calculates the distance dx or dy with respect to periodic
+    """ transforms the distance dx or dy with respect to periodic
         boundary conditions """
     return (distance + (box_length / 2)) % box_length - (box_length / 2)
 
@@ -77,14 +40,15 @@ def Lennard_Jones_force(r, dx, dy, C_12=9.847044e-6, C_6=6.2647225e-3, \
 
 def Lennard_Jones(r, C_12=9.847044e-6, C_6=6.2647225e-3, cutoff=0.33, \
                   use_cutoff=True):
-    """ function that calculates an array of V_ij values (in J/mol) corresponding 
-        to a distance array containing r_ij values (distances) """
+    """ function that calculates an array of V_ij values (in J/mol) 
+        corresponding to a distance array containing r_ij values (distances) """
     # the distance array usually contains entries with r=0, e.g. r_11
     # but we only want to use the non-zero entries for the calculation
     non_diagonal_indices = np.where(r!=0)
     V = np.zeros(r.shape)
-    V[non_diagonal_indices] = \
-        C_12 / r[non_diagonal_indices]**12 - C_6 / r[non_diagonal_indices]**6
+    r_pow_6 = r[non_diagonal_indices]**6
+
+    V[non_diagonal_indices] = C_12 / r_pow_6**2 - C_6 / r_pow_6
     LJ_cutoff = C_12 / cutoff**12 - C_6 / cutoff**6
 
     if use_cutoff==True:
@@ -106,7 +70,7 @@ def Lennard_Jones(r, C_12=9.847044e-6, C_6=6.2647225e-3, cutoff=0.33, \
 class box_simulation():
 
     def __init__(self, box_x=50, box_y=50, n_particles=50, n_steps=2000, \
-                 pbc=True):
+                 particle_mass=0.018, pbc=True):
         self.box = [box_x, box_y]
         self.n_particles = n_particles
         self.pbc = pbc
@@ -117,42 +81,45 @@ class box_simulation():
         self.kin_energies = []
         self.pot_energies = []
         self.Lennard_Jones_matrix = []
+        self.particle_mass = particle_mass
 
     def init_box(self, x, y):
         self.box = [x, y]
 
     def generate_particles(self, test_particles=[], particle_radius=1, v=1, m=1, 
-                           filename="no_filename.txt", load_from_file=False):
-        self.n_particles += len(test_particles)
-        particles = []
-        if load_from_file:
-            with open(filename, "r") as file:
-                traj = np.loadtxt(file, dtype=float, comments=["@","#"])
-                print("Looking for file '%s'"%(filename))
-                print("The loaded initial state is: \n", traj)
-                for i in range(len(traj)):
-                    p = Particle(traj[i,0], traj[i,1], traj[i,2], traj[i,3])
-                    particles.append(p)
-        else:
-            with open(filename, "w") as file:
-                print("Writing initial state to file '%s'"%(filename))
-                for i in range(self.n_particles):
-                    p = Particle(r=particle_radius, m=m)
-                    p.random_position(0, self.box[0], 0, self.box[1])
-                    p.random_velocity(v)
-                    particles.append(p)
-                    file.write("{:3.8f} {:3.8f} {:3.8f} {:3.8f}\n".format(\
-                                                    p.x, p.y, p.vx, p.vy))
-        # option to add specific test_particles
-        if test_particles != []:
-            for particle in test_particles:
-                p = Particle(x=particle[0], y=particle[1], vx=particle[2], \
-                             vy=particle[3], m=particle[4])
-                particles.append(p)
+                           load_from_file=False):
+        """ method to generate a starting position of particles and velocities
+            distributed randomly in the box. Also creates the essential arrays
+            to save the simulation result. """
 
-        self.particles = particles
+        if load_from_file:
+            traj_from_file = np.loadtxt(load_from_file, dtype=float, comments=["@","#"])
+            self.n_particles = traj_from_file.shape[0]
+            self.trajectories = np.zeros([self.n_particles, 4, self.steps+1])
+            self.trajectories[:,:,0] = traj_from_file
+            print("The initial state is loaded from the file '%s'"%(load_from_file))
+
+        else:
+            # generate the new particles with random numbers
+            n_random = self.n_particles
+            self.n_particles += len(test_particles) #total number including test particles
+            self.trajectories = np.zeros([self.n_particles, 4, self.steps+1])
+
+            positions = np.random.uniform(0, self.box[0], (2, n_random))
+            v_angles = np.random.uniform(0, 2*np.pi, n_random)
+            self.trajectories[:n_random,0,0] = positions[0]
+            self.trajectories[:n_random,1,0] = positions[1]
+            self.trajectories[:n_random,2,0] = v * np.cos(v_angles)
+            self.trajectories[:n_random,3,0] = v * np.sin(v_angles)
+
+            # option to add specific test_particles
+            if test_particles != []:
+                i = 0
+                for particle in test_particles:
+                    self.trajectories[n_random+i,:,0] = particle
+                    i += 1
+
         # also setup the necessary arrays to save the simulaiton
-        self.trajectories         = np.zeros([self.n_particles, 4, self.steps+1])
         self.particle_distances   = np.zeros([self.n_particles, \
                                               self.n_particles, 3, self.steps+1])
         self.Lennard_Jones_matrix = np.zeros([self.n_particles, \
@@ -160,6 +127,10 @@ class box_simulation():
         self.kin_energies         = np.zeros([self.n_particles, self.steps+1])
         self.pot_energies         = np.zeros([self.n_particles, self.steps+1])
 
+    def save_particle_positions(self, step, filename="no_filename.txt"):
+        """ method to save the particle positions at given step to file """
+        np.savetxt(filename, self.trajectories[:,:,step])
+        print("Save the particle positions of step %i to file '%s'" %(step,filename))
 
     def calculate_distances(self, step_index):
         """ method for calculating all distances between particles at a step"""
@@ -201,7 +172,7 @@ class box_simulation():
         """ function that moves a particle according to the 
             velocity verlet algorithm """
         #p = self.particles[particle_index]
-        m = self.particles[0].m
+        m = self.particle_mass
 
         # sum potential and forces along one (the second) particle index
         V  = np.sum(self.Lennard_Jones_matrix[:, :, 0, step_index], axis=1)
@@ -219,10 +190,12 @@ class box_simulation():
             self.trajectories[:, 0, step_index+1] %= self.box[0]
             self.trajectories[:, 1, step_index+1] %= self.box[1]
 
+        #print("Step:", step_index, self.trajectories[:, :, step_index])
+
     def verlet_update_velocities(self, step_index, dt=1):
         """ function that updates all velocities according to the 
             velocity verlet algorithm """
-        m = self.particles[0].m
+        m = self.particle_mass
         # sum potential and forces along one (the second) particle index
         V  = np.sum(self.Lennard_Jones_matrix[:, :, 0, step_index], axis=1)
         Fx = np.sum(self.Lennard_Jones_matrix[:, :, 1, step_index], axis=1)*1000
@@ -239,16 +212,9 @@ class box_simulation():
         self.trajectories[:, 3, step_index+1] = \
                 self.trajectories[:, 3, step_index] + 0.5 * (ay + ay_new) * dt
 
-    def simulate(self, step_interval=1):
+    def simulate_MD(self, step_interval=1):
         """ method to run the simulation and create the trajectories """
 
-        # setting up the simulation state at t=0
-        for particle_index in range(self.n_particles):
-            self.trajectories[particle_index,0:4, 0] =  \
-                                    [self.particles[particle_index].x,  \
-                                     self.particles[particle_index].y,  \
-                                     self.particles[particle_index].vx, \
-                                     self.particles[particle_index].vy]
         self.calculate_distances(0)
         self.calculate_LJ_potential_and_force(0)
 
@@ -258,17 +224,122 @@ class box_simulation():
             self.verlet_update_positions(step, dt=step_interval)
             # calculate the new values of the LJ potential and force
             self.calculate_distances(step+1)
-            self.calculate_LJ_potential_and_force(step+1)
+            self.calculate_LJ_potential_and_force(step+1, use_cutoff=True)
             # update all velocities
             self.verlet_update_velocities(step, dt=step_interval)
 
-        self.kin_energies = 0.5 * self.particles[0].m * \
+        self.kin_energies = 0.5 * self.particle_mass * \
                 (self.trajectories[:,2,:]**2 + self.trajectories[:,3,:]**2)
 
-    def plot_energies(self):
+    def calc_F_direction(self, step):
+        """ returns the normalised F vector at given time step """
+        self.calculate_distances(step)
+        self.calculate_LJ_potential_and_force(step, use_cutoff=False)
+        Fx = np.sum(self.Lennard_Jones_matrix[:, :, 1, step], axis=1)
+        Fy = np.sum(self.Lennard_Jones_matrix[:, :, 2, step], axis=1)
+        F_abs = np.sqrt(Fx**2 + Fy**2)
+        # build r vector of length 0.05nm along F
+        r_x = Fx / F_abs
+        r_y = Fy / F_abs
+        return np.array([r_x, r_y])
 
+    def E_pot(self, step):
+        """ returns the potential energie at a given simulation step """
+        return np.sum(self.Lennard_Jones_matrix[:, :, 0, step], axis=(0,1))/2
+    
+    def move(self, step, r_x, r_y, length=0.05):
+        """ moves all particles along r """
+        self.trajectories[:, 0, step+1] = (self.trajectories[:, 0, step] + r_x*length) % self.box[0]
+        self.trajectories[:, 1, step+1] = (self.trajectories[:, 1, step] + r_y*length) % self.box[1]
+
+    def simulate_SD(self, step_interval=1, step_length=0.01):
+        r = self.calc_F_direction(0)
+        E_1 = self.E_pot(0)
+        E_2 = E_1 - 1
+        step = 0
+        run_loop = True
+        counts_else = 0
+        #pbar = tqdm()
+        E_1_minus_E_2 = []
+        while run_loop and step<self.steps-3:
+            #print("simulation step: %i" %(step), end="\r")
+            self.move(step, r[0], r[1], length=step_length)
+            self.calculate_distances(step+1)
+            self.calculate_LJ_potential_and_force(step+1)
+            E_2 = self.E_pot(step+1)
+            #print(E_1, E_2)
+            E_1_minus_E_2.append(E_1-E_2)
+            step += 1
+            #pbar.update(1)
+            if E_1 > E_2:
+                E_1 = E_2 # set the old E2 as new E1
+                #r = self.calc_F_direction(step)
+                #pass
+            else:
+                # try to get E_1 > E_2 by moving along the new F
+                E_1 = E_2 # set the old E2 as new E1
+                r = self.calc_F_direction(step)
+                self.move(step, r[0], r[1], length=step_length)
+                self.calculate_distances(step+1)
+                self.calculate_LJ_potential_and_force(step+1)
+                E_2 = self.E_pot(step+1)
+                E_1_minus_E_2.append(E_1-E_2)
+                step += 1
+                counts_else += 1
+                #pbar.update(1)
+                if E_1 < E_2:
+                    # E_2 still larger -> end loop
+                    #pass
+                    run_loop = False
+                print("else:", E_1, E_2, "run_loop", run_loop)
+                E_1 = E_2
+        print("counts_else:", counts_else, "steps total:", step) 
+        plt.plot(range(len(E_1_minus_E_2)-1), E_1_minus_E_2[1:])
+
+    def simulate_SD2(self, step_interval=1, step_length=0.01):
+
+        step = 0
+        run_loop = True
+        counts_else = 0
+        E_1_minus_E_2 = []
+
+        r = self.calc_F_direction(0)
+        E_1 = self.E_pot(0)
+        E_2 = E_1 - 1
+        counter_E1_larger_E2 = 0
+
+        while run_loop and step<self.steps-3:
+
+            continue_moving = True
+
+            while continue_moving and step<self.steps-2:
+                self.move(step, r[0], r[1], length=step_length)
+                self.calculate_distances(step+1)
+                self.calculate_LJ_potential_and_force(step+1, use_cutoff=False)
+                E_2 = self.E_pot(step+1)
+                E_1_minus_E_2.append(E_1-E_2)
+                step += 1
+                if E_1 > E_2:
+                    # continue, and set the old E_2 as new E_1
+                    E_1 = E_2
+                    counter_E1_larger_E2 += 1
+                else:
+                    # dont move in that direction any more
+                    continue_moving = False
+
+            # calculate the new direction of the Force vector
+            r = self.calc_F_direction(step)
+
+        print("counts E1 > E2:", counter_E1_larger_E2, "steps total:", step) 
+        steps = range(len(E_1_minus_E_2))
+        plot_from = 10
+        plt.plot(steps[plot_from:], E_1_minus_E_2[plot_from:])
+        plt.axvline(0, color="g")
+
+    def plot_energies(self):
         E_kin = np.sum(self.kin_energies, axis=0) / 1000 # to make it kJ/mol
         E_pot = np.sum(self.Lennard_Jones_matrix[:,:,0,:], axis=(0,1)) / 2
+        #print("E_pot array:", E_pot)
         E_tot = E_kin + E_pot
         E_diff = E_kin - E_pot
         # divide by two because otherwise all values are double counted
@@ -290,10 +361,10 @@ class box_simulation():
 
         time_range = np.arange(self.steps+1) * 2e-6 #time in ns
 
-        ax1.plot(time_range, E_kin, label=r"$E_{kin}$", color="g")
-        ax1.plot(time_range, E_pot, label=r"$E_{pot}$", color="r")
-        ax1.plot(time_range, E_tot, label=r"$E_{kin} + E_{pot}$", color="b")
-        ax1.axhline(E_tot[0], ls="--", color="b")
+        #ax1.plot(time_range, E_kin, label=r"$E_{kin}$", color="g")
+        ax1.plot(range(10,len(E_pot)), E_pot[10:], label=r"$E_{pot}$", color="r")
+        #ax1.plot(time_range, E_tot, label=r"$E_{kin} + E_{pot}$", color="b")
+        #ax1.axhline(E_tot[0], ls="--", color="b")
         ax1.legend()
 
         ax2.plot(time_range[1:], E_tot_diff, label=r"$E_{tot}(t+\Delta t) - E_{tot}(t)$", color="b")
@@ -454,11 +525,4 @@ class box_simulation():
         plt.show()
 
         return r_linspace, g_r_linspace
-
-
-
-
-
-
-
 

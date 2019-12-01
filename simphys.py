@@ -91,7 +91,7 @@ class box_simulation():
         self.box = [x, y]
 
     def generate_particles(self, test_particles=[], particle_radius=1, v=1, m=1, 
-                           load_from_file=False):
+                           load_from_file=False, new_velocities=False):
         """ method to generate a starting position of particles and velocities
             distributed randomly in the box. Also creates the essential arrays
             to save the simulation result. """
@@ -103,6 +103,11 @@ class box_simulation():
             self.trajectories[:,:,0] = traj_from_file
             print("The initial state is loaded from the file '%s'" \
                   %(load_from_file))
+            if new_velocities:
+                v_angles = np.random.uniform(0, 2*np.pi, self.n_particles)
+                self.trajectories[:,2,0] = v * np.cos(v_angles)
+                self.trajectories[:,3,0] = v * np.sin(v_angles)
+
 
         else:
             # generate the new particles with random numbers
@@ -262,50 +267,6 @@ class box_simulation():
                                            r_x*length) % self.box[0]
         self.trajectories[:, 1, step+1] = (self.trajectories[:, 1, step] + \
                                            r_y*length) % self.box[1]
-
-    def simulate_SD_old(self, step_interval=1, step_length=0.01):
-        r = self.calc_F_direction(0)
-        E_1 = self.E_pot(0)
-        E_2 = E_1 - 1
-        step = 0
-        run_loop = True
-        counts_else = 0
-        #pbar = tqdm()
-        E_1_minus_E_2 = []
-        while run_loop and step<self.steps-3:
-            #print("simulation step: %i" %(step), end="\r")
-            self.move(step, r[0], r[1], length=step_length)
-            self.calculate_distances(step+1)
-            self.calculate_LJ_potential_and_force(step+1)
-            E_2 = self.E_pot(step+1)
-            #print(E_1, E_2)
-            E_1_minus_E_2.append(E_1-E_2)
-            step += 1
-            #pbar.update(1)
-            if E_1 > E_2:
-                E_1 = E_2 # set the old E2 as new E1
-                #r = self.calc_F_direction(step)
-                #pass
-            else:
-                # try to get E_1 > E_2 by moving along the new F
-                E_1 = E_2 # set the old E2 as new E1
-                r = self.calc_F_direction(step)
-                self.move(step, r[0], r[1], length=step_length)
-                self.calculate_distances(step+1)
-                self.calculate_LJ_potential_and_force(step+1)
-                E_2 = self.E_pot(step+1)
-                E_1_minus_E_2.append(E_1-E_2)
-                step += 1
-                counts_else += 1
-                #pbar.update(1)
-                if E_1 < E_2:
-                    # E_2 still larger -> end loop
-                    #pass
-                    run_loop = False
-                print("else:", E_1, E_2, "run_loop", run_loop)
-                E_1 = E_2
-        print("counts_else:", counts_else, "steps total:", step) 
-        plt.plot(range(len(E_1_minus_E_2)-1), E_1_minus_E_2[1:])
 
     def run_SD(self, step_length=0.01, plot_from=False):
         """ method to run the minimisation of the total potential energy of

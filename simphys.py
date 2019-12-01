@@ -21,7 +21,8 @@ def Lennard_Jones_force(r, dx, dy, C_12=9.847044e-6, C_6=6.2647225e-3, \
     r_values  = np.copy(r)
 
     #dirty workaround to avoid division by zero
-    r_values[np.where(r_values==0)] = 42e10
+    zero_indices = np.where(r_values==0)
+    r_values[zero_indices] = 42e10
 
     if use_cutoff==True:
         # for distances below the cutoff we want assign them the same force
@@ -36,6 +37,9 @@ def Lennard_Jones_force(r, dx, dy, C_12=9.847044e-6, C_6=6.2647225e-3, \
 
     F = (12 * C_12 / r_values**13 - 6 * C_6 / r_values**7) \
         * 1 / r_values * np.array([dx_values, dy_values])
+    # set F=0 at entries where r=0
+    F[0][zero_indices] = 0
+    F[1][zero_indices] = 0
     return F
 
 def Lennard_Jones(r, C_12=9.847044e-6, C_6=6.2647225e-3, cutoff=0.33, \

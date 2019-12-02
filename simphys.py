@@ -275,14 +275,15 @@ class box_simulation():
         step = 0
         run_loop = True
         counts_else = 0
-        E_1_minus_E_2 = []
+        E_1_minus_E_2 = np.zeros(self.steps)
 
         r = self.calc_F_direction(0)
         E_1 = self.E_pot(0)
         E_2 = E_1 - 1
         counter_E1_larger_E2 = 0
 
-        while run_loop and step<self.steps:
+        #while run_loop and step<self.steps:
+        for i in tqdm(range(self.steps)):
 
             continue_moving = True
 
@@ -291,15 +292,19 @@ class box_simulation():
                 self.calculate_distances(step+1)
                 self.calculate_LJ_potential_and_force(step+1, use_cutoff=False)
                 E_2 = self.E_pot(step+1)
-                E_1_minus_E_2.append(E_1-E_2)
+                E_1_minus_E_2[step] = E_1-E_2
                 step += 1
                 if E_1 > E_2:
                     # continue, and set the old E_2 as new E_1
                     E_1 = E_2
                     counter_E1_larger_E2 += 1
+                    if step > self.steps:
+                        break
                 else:
                     # dont move in that direction any more
                     continue_moving = False
+            if step > self.steps:
+                break
 
             # calculate the new direction of the Force vector
             r = self.calc_F_direction(step)
@@ -487,7 +492,7 @@ class box_simulation():
         plt.tight_layout()
         plt.show()
 
-    def radial_distribution_function(self, n_bins=20, dr=0.01, n_linspace=200, x_offset=5):
+    def RDF(self, n_bins=20, dr=0.01, n_linspace=200, x_offset=5):
         """ method to plot the RDF """
 
         distances_time_average = self.particle_distances[:,:,2,:].flatten()
@@ -514,6 +519,7 @@ class box_simulation():
         ax2.set_title(r"Time and particle averaged RDF")
         ax1.hist(distances_time_average, bins=n_bins)
         ax2.plot(r_linspace[1:], g_r)
+        ax2.axhline(1, ls='--')
         plt.tight_layout()
         plt.show()
 

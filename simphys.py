@@ -282,7 +282,6 @@ class box_simulation():
         E_2 = E_1 - 1
         counter_E1_larger_E2 = 0
 
-        #while run_loop and step<self.steps:
         for i in tqdm(range(self.steps)):
 
             continue_moving = True
@@ -293,10 +292,10 @@ class box_simulation():
                 self.calculate_LJ_potential_and_force(step+1, use_cutoff=False)
                 E_2 = self.E_pot(step+1)
                 E_1_minus_E_2[step] = E_1-E_2
+                E_1 = E_2
                 step += 1
                 if E_1 > E_2:
                     # continue, and set the old E_2 as new E_1
-                    E_1 = E_2
                     counter_E1_larger_E2 += 1
                     if step > self.steps:
                         break

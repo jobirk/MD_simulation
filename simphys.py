@@ -81,11 +81,11 @@ class box_simulation():
         self.steps = n_steps
         self.particle_distances = []
         self.trajectories = []
-        self.particles = []
         self.kin_energies = []
         self.pot_energies = []
         self.Lennard_Jones_matrix = []
         self.particle_mass = particle_mass
+        self.step_interval = 0
 
     def init_box(self, x, y):
         self.box = [x, y]
@@ -229,8 +229,12 @@ class box_simulation():
     def simulate_MD(self, step_interval=1, use_cutoff=True):
         """ method to run the simulation and create the trajectories """
 
+        self.step_interval = step_interval
         self.calculate_distances(0)
         self.calculate_LJ_potential_and_force(0, use_cutoff=use_cutoff)
+        self.thermostat = np.zeros([self.steps+1, 2]) # T and lambda for all steps
+
+        self.thermostat[0, 0] = self.get_T(0)
 
         # >>>> simulation <<<<
         for step in tqdm(range(self.steps)):
@@ -241,6 +245,9 @@ class box_simulation():
             self.calculate_LJ_potential_and_force(step+1, use_cutoff=use_cutoff)
             # update all velocities
             self.verlet_update_velocities(step, dt=step_interval)
+            # rescale new velocities with berendsen thermostat
+            self.thermostat[step+1,:] = self.berendsen_thermo(step+1, 0.0002, 100)
+            # print('Temperature', self.get_T(step), end='\n')
 
         self.kin_energies = 0.5 * self.particle_mass * \
                 (self.trajectories[:,2,:]**2 + self.trajectories[:,3,:]**2)
@@ -260,6 +267,22 @@ class box_simulation():
     def E_pot(self, step):
         """ returns the potential energie at a given simulation step """
         return np.sum(self.Lennard_Jones_matrix[:, :, 0, step], axis=(0,1))/2
+
+    def get_T(self, step):
+        """ returns the temperature in the box at given sim. step """
+        k = 8.13 # Gas constant
+        T = self.particle_mass / (2 * k * self.n_particles) * \
+            np.sum(self.trajectories[:,2,step]**2 + self.trajectories[:,3,step]**2)
+        return T
+
+    def berendsen_thermo(self, step, tau, T0):
+        """ method to scale the velocities with the berendsen thermostat """
+        T = self.get_T(step)
+        lam = np.sqrt( 1 + self.step_interval / tau * (T0 / T -1 ))
+        # multiply the velocities of the given step with the factor lambda
+        self.trajectories[:, 2:4, step] *= lam
+        return T, lam
+        # print(T0, self.get_T(step), lam)
     
     def move(self, step, r_x, r_y, length=0.05):
         """ moves all particles along r """
@@ -308,7 +331,6 @@ class box_simulation():
             # calculate the new direction of the Force vector
             r = self.calc_F_direction(step)
 
-        print("counts E1 > E2:", counter_E1_larger_E2, "steps total:", step) 
         steps = range(len(E_1_minus_E_2))
 
         if plot_from:
@@ -369,6 +391,24 @@ class box_simulation():
         ax2.plot(time_range[1:], E_tot_diff, label=r"$E_{tot}(t+\Delta t) - E_{tot}(t)$", color="b")
         ax2.axhline(0, ls="--", color="b")
         ax2.legend()
+
+        plt.tight_layout()
+        plt.show()
+
+    def plot_temperatures(self):
+        fig, (ax1, ax2) = plt.subplots(1, 2)
+        fig.set_figheight(4)
+        fig.set_figwidth(13)
+
+        ax1.set_xlabel(r'Time t [ns]')
+        ax1.set_ylabel('Temperature [K]')
+        ax2.set_xlabel(r'Time t [ns]')
+        ax2.set_ylabel(r' $\lambda$ ')
+        ax1.set_title('Temperature as a function of time')
+        ax2.set_title('Velocity scaling factor')
+        
+        ax1.plot(range(self.steps+1), self.thermostat[:,0])
+        ax2.plot(range(self.steps+1), self.thermostat[:,1])
 
         plt.tight_layout()
         plt.show()

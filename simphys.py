@@ -2,11 +2,21 @@ import numpy as np
 import copy
 import matplotlib.pyplot as plt
 from matplotlib import animation, rc
+from scipy.stats import rv_continuous
+import scipy.constants as con
 from IPython.display import HTML
 from tqdm import tqdm
 import time
 import sys
 
+class boltzmann_2D(rv_continuous):
+    def set_parameters(self, m=0.018, T=1):
+        self.m = m
+        self.T = T
+    def _pdf(self, v):
+        k = con.R
+        c = self.m / (k*self.T)
+        return c * v * np.exp(-c/2 * v**2)
 
 def distance_pbc_transformation(distance, box_length):
     """ transforms the distance dx or dy with respect to periodic
@@ -98,7 +108,7 @@ class box_simulation():
         self.box = [x, y]
 
     def generate_particles(self, test_particles=[], particle_radius=1, v=1, m=1, 
-                           load_from_file=False, new_velocities=False):
+                           load_from_file=False, new_velocities=False, T=0):
         """ method to generate a starting position of particles and velocities
             distributed randomly in the box. Also creates the essential arrays
             to save the simulation result. """
@@ -136,6 +146,24 @@ class box_simulation():
                 for particle in test_particles:
                     self.trajectories[n_random+i,:,0] = particle
                     i += 1
+        if T:
+            # assign velocities according to 2D boltzmann distrib.
+            print('Assigning velocities according to Maxwell Boltzmann distribution at T=%s'%(T))
+            bd = boltzmann_2D(a=0, b=1000, name='boltzmann2D')
+            bd.set_parameters(m=self.particle_mass, T=T)
+            boltzmann_velocities = np.zeros(self.n_particles)
+            for i in range(self.n_particles):
+                boltzmann_velocities[i] = bd.rvs()
+            v = boltzmann_velocities
+            v_angles = np.random.uniform(0, 2*np.pi, self.n_particles)
+            self.trajectories[:,2,0] = v * np.cos(v_angles)
+            self.trajectories[:,3,0] = v * np.sin(v_angles)
+
+        # v0 = np.sqrt(self.trajectories[:n_random,2,0]**2 + self.trajectories[:n_random,3,0]**2)
+        # plt.hist(v, bins=30)
+        # plt.show()
+        # plt.hist(v0, bins=30)
+        # plt.show()
 
         # also setup the necessary arrays to save the simulaiton
         self.particle_distances   = np.zeros([self.n_particles, \
@@ -211,8 +239,6 @@ class box_simulation():
         if self.pbc:
             self.trajectories[:, 0, step_index+1] %= self.box[0]
             self.trajectories[:, 1, step_index+1] %= self.box[1]
-
-        #print("Step:", step_index, self.trajectories[:, :, step_index])
 
     def verlet_update_velocities(self, step_index, dt=1):
         """ function that updates all velocities according to the 
@@ -448,7 +474,7 @@ class box_simulation():
         plt.tight_layout()
         plt.show()
 
-    def animate_trajectories(self, animation_interval=30, dot_size=5):
+    def animate_trajectories(self, animation_interval=30, dot_size=5, steps=5):
         """ method to animate the particle movement """
         fig, ax = plt.subplots()
         fig.set_figheight(6)
@@ -468,15 +494,19 @@ class box_simulation():
                 line.set_data([], [])
             return lines
 
+        x_animate = self.trajectories[:,0,::steps]
+        y_animate = self.trajectories[:,1,::steps]
+        print(x_animate.shape)
+
         def animate(i):
             for j in range(len(lines)):
-                x = self.trajectories[j][0,i]
-                y = self.trajectories[j][1,i]
+                x = x_animate[j,i]
+                y = y_animate[j,i]
                 lines[j].set_data(x, y)
             return lines
 
         anim = animation.FuncAnimation(fig, animate, init_func=init, \
-                                   frames=self.steps, interval=animation_interval, blit=True)
+                                   frames=x_animate.shape[1], interval=animation_interval, blit=True)
         #plt.show()
         return HTML(anim.to_html5_video())
         #return HTML(anim.to_jshtml())
@@ -515,7 +545,7 @@ class box_simulation():
         plt.tight_layout()
         plt.show()
 
-    def velocity_distributions(self, start=0, end="standard", n_bins=50, width_factor=1):
+    def velocity_distributions(self, start=0, end="standard", n_bins=50, width=100):
         """ methdo to plot the velocity distributions """
         if end=="standard":
             end = self.steps
@@ -536,12 +566,10 @@ class box_simulation():
         vx = np.concatenate([self.trajectories[j][2,start:end] for j in range(self.n_particles)])
         vy = np.concatenate([self.trajectories[j][3,start:end] for j in range(self.n_particles)])
         # plot the normalised histograms
-        ax1.hist(vx, bins=n_bins, density=1,
-                 range=(-width_factor*self.particle_start_velocity, width_factor*self.particle_start_velocity))
-        ax2.hist(vy, bins=n_bins, density=1,
-                 range=(-width_factor*self.particle_start_velocity, width_factor*self.particle_start_velocity))
+        ax1.hist(vx, bins=n_bins, density=1, range=(-width, width))
+        ax2.hist(vy, bins=n_bins, density=1, range=(-width, width))
         v_tot = np.sqrt(vx**2+vy**2)
-        ax3.hist(v_tot, bins=n_bins, density=1, range=(0, 6.1*self.particle_start_velocity))
+        ax3.hist(v_tot, bins=n_bins, density=1, range=(0, 6.1*width))
 
         plt.tight_layout()
         plt.show()

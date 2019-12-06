@@ -13,8 +13,8 @@ def distance_pbc_transformation(distance, box_length):
         boundary conditions """
     return (distance + (box_length / 2)) % box_length - (box_length / 2)
 
-def Lennard_Jones_force(r, dx, dy, C_12=9.847044e-6, C_6=6.2647225e-3, \
-                        cutoff=0.33, use_cutoff=True):
+def Lennard_Jones_force(r, dx, dy, C_12=9.847044e-6, C_6=6.2647225e-3, 
+        cutoff=0.33, use_lower_cutoff=False, use_upper_cutoff=False):
     """ Lennard Jones Force in N/mol """
     dx_values = np.copy(dx)
     dy_values = np.copy(dy)
@@ -24,10 +24,9 @@ def Lennard_Jones_force(r, dx, dy, C_12=9.847044e-6, C_6=6.2647225e-3, \
     zero_indices = np.where(r_values==0)
     r_values[zero_indices] = 42e10
 
-    if use_cutoff==True:
+    if use_lower_cutoff==True:
         # for distances below the cutoff we want assign them the same force
         # Therefore, adjust the dx, dy, r appropriately
-        
         cutoff_indices = np.where(r<cutoff)
         dx_values[cutoff_indices] = dx_values[cutoff_indices] * \
                                     cutoff/r_values[cutoff_indices]
@@ -37,13 +36,21 @@ def Lennard_Jones_force(r, dx, dy, C_12=9.847044e-6, C_6=6.2647225e-3, \
 
     F = (12 * C_12 / r_values**13 - 6 * C_6 / r_values**7) \
         * 1 / r_values * np.array([dx_values, dy_values])
+
+    if use_upper_cutoff==True:
+        # print('using upper cutoff')
+        # set all Forces for distances > 0.9nm to zero
+        up_cut_indices = np.where(r_values > 0.9)
+        F[0][up_cut_indices] = 0
+        F[1][up_cut_indices] = 0
+
     # set F=0 at entries where r=0
     F[0][zero_indices] = 0
     F[1][zero_indices] = 0
     return F
 
 def Lennard_Jones(r, C_12=9.847044e-6, C_6=6.2647225e-3, cutoff=0.33, \
-                  use_cutoff=True):
+                  use_lower_cutoff=True):
     """ function that calculates an array of V_ij values (in J/mol) 
         corresponding to a distance array containing r_ij values (distances) """
     # the distance array usually contains entries with r=0, e.g. r_11
@@ -55,7 +62,7 @@ def Lennard_Jones(r, C_12=9.847044e-6, C_6=6.2647225e-3, cutoff=0.33, \
     V[non_diagonal_indices] = C_12 / r_pow_6**2 - C_6 / r_pow_6
     LJ_cutoff = C_12 / cutoff**12 - C_6 / cutoff**6
 
-    if use_cutoff==True:
+    if use_lower_cutoff==True:
         # correct the values below the cutoff
         cutoff_indices = np.where(r<cutoff)
         # this is the potential if assuming a 
@@ -163,22 +170,25 @@ class box_simulation():
         self.particle_distances[:, :, 1, step_index] = dy
         self.particle_distances[:, :, 2, step_index] = r 
 
-    def calculate_LJ_potential_and_force(self, step_index, use_cutoff=True):
+    def calculate_LJ_potential_and_force(self, step_index, \
+                        use_lower_cutoff=False, use_upper_cutoff=False):
         """ function that calculates the matrix of LJ potentials 
             and forces between all particles """
         self.Lennard_Jones_matrix[:, :, 0, step_index] = \
                 Lennard_Jones(self.particle_distances[:, :, 2, step_index], 
-                              use_cutoff=use_cutoff)
+                              use_lower_cutoff=use_lower_cutoff)
         self.Lennard_Jones_matrix[:, :, 1, step_index] = \
             Lennard_Jones_force(self.particle_distances[:, :, 2, step_index], 
                                 self.particle_distances[:, :, 0, step_index],
                                 self.particle_distances[:, :, 1, step_index], 
-                                use_cutoff=use_cutoff)[0]
+                                use_lower_cutoff=use_lower_cutoff,
+                                use_upper_cutoff=use_upper_cutoff)[0]
         self.Lennard_Jones_matrix[:, :, 2, step_index] = \
             Lennard_Jones_force(self.particle_distances[:, :, 2, step_index], 
                                 self.particle_distances[:, :, 0, step_index],
                                 self.particle_distances[:, :, 1, step_index],
-                                use_cutoff=use_cutoff)[1]
+                                use_lower_cutoff=use_lower_cutoff,
+                                use_upper_cutoff=use_upper_cutoff)[1]
 
     def verlet_update_positions(self, step_index, dt=1):
         """ function that moves a particle according to the 
@@ -226,12 +236,13 @@ class box_simulation():
         self.trajectories[:, 3, step_index+1] = \
                 self.trajectories[:, 3, step_index] + 0.5 * (ay + ay_new) * dt
 
-    def simulate_MD(self, step_interval=1, use_cutoff=True):
+    def simulate_MD(self, step_interval=1, use_lower_cutoff=False, use_upper_cutoff=False):
         """ method to run the simulation and create the trajectories """
 
         self.step_interval = step_interval
         self.calculate_distances(0)
-        self.calculate_LJ_potential_and_force(0, use_cutoff=use_cutoff)
+        self.calculate_LJ_potential_and_force(0, use_lower_cutoff=use_lower_cutoff,
+                                                 use_upper_cutoff=use_upper_cutoff)
         self.thermostat = np.zeros([self.steps+1, 2]) # T and lambda for all steps
 
         self.thermostat[0, 0] = self.get_T(0)
@@ -242,7 +253,9 @@ class box_simulation():
             self.verlet_update_positions(step, dt=step_interval)
             # calculate the new values of the LJ potential and force
             self.calculate_distances(step+1)
-            self.calculate_LJ_potential_and_force(step+1, use_cutoff=use_cutoff)
+            self.calculate_LJ_potential_and_force(step+1,
+                    use_lower_cutoff=use_lower_cutoff,
+                    use_upper_cutoff=use_upper_cutoff)
             # update all velocities
             self.verlet_update_velocities(step, dt=step_interval)
             # rescale new velocities with berendsen thermostat
@@ -255,7 +268,7 @@ class box_simulation():
     def calc_F_direction(self, step):
         """ returns the normalised F vector at given time step """
         self.calculate_distances(step)
-        self.calculate_LJ_potential_and_force(step, use_cutoff=False)
+        self.calculate_LJ_potential_and_force(step, use_lower_cutoff=False)
         Fx = np.sum(self.Lennard_Jones_matrix[:, :, 1, step], axis=1)
         Fy = np.sum(self.Lennard_Jones_matrix[:, :, 2, step], axis=1)
         F_abs = np.sqrt(Fx**2 + Fy**2)
@@ -278,6 +291,8 @@ class box_simulation():
     def berendsen_thermo(self, step, tau, T0):
         """ method to scale the velocities with the berendsen thermostat """
         T = self.get_T(step)
+        if T == 0:
+            T = 1e-42
         lam = np.sqrt( 1 + self.step_interval / tau * (T0 / T -1 ))
         # multiply the velocities of the given step with the factor lambda
         self.trajectories[:, 2:4, step] *= lam
@@ -312,7 +327,7 @@ class box_simulation():
             while continue_moving and step<self.steps:
                 self.move(step, r[0], r[1], length=step_length)
                 self.calculate_distances(step+1)
-                self.calculate_LJ_potential_and_force(step+1, use_cutoff=False)
+                self.calculate_LJ_potential_and_force(step+1, use_lower_cutoff=False)
                 E_2 = self.E_pot(step+1)
                 E_1_minus_E_2[step] = E_1-E_2
                 E_1 = E_2

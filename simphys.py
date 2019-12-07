@@ -159,12 +159,6 @@ class box_simulation():
             self.trajectories[:,2,0] = v * np.cos(v_angles)
             self.trajectories[:,3,0] = v * np.sin(v_angles)
 
-        # v0 = np.sqrt(self.trajectories[:n_random,2,0]**2 + self.trajectories[:n_random,3,0]**2)
-        # plt.hist(v, bins=30)
-        # plt.show()
-        # plt.hist(v0, bins=30)
-        # plt.show()
-
         # also setup the necessary arrays to save the simulaiton
         self.particle_distances   = np.zeros([self.n_particles, \
                                             self.n_particles, 3, self.steps+1])
@@ -307,12 +301,38 @@ class box_simulation():
         """ returns the potential energie at a given simulation step """
         return np.sum(self.Lennard_Jones_matrix[:, :, 0, step], axis=(0,1))/2
 
-    def get_T(self, step):
+    def get_T(self, step, N=0):
         """ returns the temperature in the box at given sim. step """
+        if N==0:
+            N = self.n_particles
         k = 8.13 # Gas constant
-        T = self.particle_mass / (2 * k * self.n_particles) * \
-            np.sum(self.trajectories[:,2,step]**2 + self.trajectories[:,3,step]**2)
+        T = self.particle_mass / (2 * k * N) * \
+            np.sum(self.trajectories[:N,2,step]**2 + self.trajectories[:N,3,step]**2)
         return T
+
+    def temperature_analysis(self, N_start=3, deltaN=1):
+        N_array = np.arange(N_start, self.n_particles, deltaN)
+        rel_T_variances = np.zeros(len(N_array))
+        for i in tqdm(range(len(N_array))):
+            temperatures = np.array([self.get_T(step, N_array[i]) for step in range(self.steps)])
+            var_T = np.var(temperatures)
+            mean_T = np.mean(temperatures)
+            rel_T_variances[i] = var_T / mean_T**2
+
+        fig, (ax1) = plt.subplots(1, 1)
+        fig.set_figheight(4)
+        fig.set_figwidth(6)
+
+        ax1.set_xlabel(r'N')
+        ax1.set_ylabel(r'$\sigma_{T}^2$ / $\left<T\right>^2$')
+        ax1.set_title('Relative variance of the temperature')
+        
+        ax1.plot(N_array, rel_T_variances, label=r'$\sigma_{T}^2$ / $\left<T\right>^2$')
+        ax1.plot(N_array, 1/N_array, label=r'1/N')
+        ax1.legend()
+
+        plt.tight_layout()
+        plt.show()
 
     def berendsen_thermo(self, step, tau, T0):
         """ method to scale the velocities with the berendsen thermostat """
@@ -323,7 +343,6 @@ class box_simulation():
         # multiply the velocities of the given step with the factor lambda
         self.trajectories[:, 2:4, step] *= lam
         return T, lam
-        # print(T0, self.get_T(step), lam)
     
     def move(self, step, r_x, r_y, length=0.05):
         """ moves all particles along r """
@@ -569,7 +588,7 @@ class box_simulation():
         ax1.hist(vx, bins=n_bins, density=1, range=(-width, width))
         ax2.hist(vy, bins=n_bins, density=1, range=(-width, width))
         v_tot = np.sqrt(vx**2+vy**2)
-        ax3.hist(v_tot, bins=n_bins, density=1, range=(0, 6.1*width))
+        ax3.hist(v_tot, bins=n_bins, density=1, range=(0, 2*width))
 
         plt.tight_layout()
         plt.show()

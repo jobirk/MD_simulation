@@ -192,13 +192,18 @@ class box_simulation():
         self.particle_distances[:, :, 1, step_index] = dy
         self.particle_distances[:, :, 2, step_index] = r 
 
-    def calculate_LJ_potential_and_force(self, step_index, \
+    def calculate_LJ_potential(self, step_index, \
                         use_lower_cutoff=False, use_upper_cutoff=False):
         """ function that calculates the matrix of LJ potentials 
             and forces between all particles """
         self.Lennard_Jones_matrix[:, :, 0, step_index] = \
                 Lennard_Jones(self.particle_distances[:, :, 2, step_index], 
                               use_lower_cutoff=use_lower_cutoff)
+
+    def calculate_LJ_force(self, step_index, \
+                        use_lower_cutoff=False, use_upper_cutoff=False):
+        """ function that calculates the matrix of LJ potentials 
+            and forces between all particles """
         self.Lennard_Jones_matrix[:, :, 1, step_index] = \
             Lennard_Jones_force(self.particle_distances[:, :, 2, step_index], 
                                 self.particle_distances[:, :, 0, step_index],
@@ -261,7 +266,9 @@ class box_simulation():
 
         self.step_interval = step_interval
         self.calculate_distances(0)
-        self.calculate_LJ_potential_and_force(0, use_lower_cutoff=use_lower_cutoff,
+        self.calculate_LJ_potential(0, use_lower_cutoff=use_lower_cutoff,
+                                                 use_upper_cutoff=use_upper_cutoff)
+        self.calculate_LJ_force(0, use_lower_cutoff=use_lower_cutoff,
                                                  use_upper_cutoff=use_upper_cutoff)
         self.thermostat = np.zeros([self.steps+1, 2]) # T and lambda for all steps
 
@@ -273,7 +280,10 @@ class box_simulation():
             self.verlet_update_positions(step, dt=step_interval)
             # calculate the new values of the LJ potential and force
             self.calculate_distances(step+1)
-            self.calculate_LJ_potential_and_force(step+1,
+            self.calculate_LJ_potential(step+1,
+                    use_lower_cutoff=use_lower_cutoff,
+                    use_upper_cutoff=use_upper_cutoff)
+            self.calculate_LJ_force(step+1,
                     use_lower_cutoff=use_lower_cutoff,
                     use_upper_cutoff=use_upper_cutoff)
             # update all velocities
@@ -288,7 +298,8 @@ class box_simulation():
     def calc_F_direction(self, step):
         """ returns the normalised F vector at given time step """
         self.calculate_distances(step)
-        self.calculate_LJ_potential_and_force(step, use_lower_cutoff=False)
+        self.calculate_LJ_potential(step, use_lower_cutoff=False)
+        self.calculate_LJ_force(step, use_lower_cutoff=False)
         Fx = np.sum(self.Lennard_Jones_matrix[:, :, 1, step], axis=1)
         Fy = np.sum(self.Lennard_Jones_matrix[:, :, 2, step], axis=1)
         F_abs = np.sqrt(Fx**2 + Fy**2)
@@ -344,12 +355,62 @@ class box_simulation():
         self.trajectories[:, 2:4, step] *= lam
         return T, lam
     
-    def move(self, step, r_x, r_y, length=0.05):
+    def move_all_particles(self, step, r_x=0, r_y=0, length=0.05):
         """ moves all particles along r """
         self.trajectories[:, 0, step+1] = (self.trajectories[:, 0, step] + \
                                            r_x*length) % self.box[0]
         self.trajectories[:, 1, step+1] = (self.trajectories[:, 1, step] + \
                                            r_y*length) % self.box[1]
+
+    def move_single_particle(self, part_index, step, r_x=0, r_y=0, \
+                             random_direction=False, length=0.05):
+        if random_direction:
+            phi = np.random.uniform(0, 2*np.pi)
+            r_x = np.cos(phi)
+            r_y = np.sin(phi)
+        self.trajectories[part_index, 0, step+1] = \
+            (self.trajectories[part_index, 0, step] + r_x*length) % self.box[0]
+        self.trajectories[part_index, 1, step+1] = \
+            (self.trajectories[part_index, 1, step] + r_y*length) % self.box[1]
+
+    def MC_simulation(self, r_length=0.01, T=50):
+        """ method to perform a MC simulation with the Metropolis algorithm """
+        step = 0
+        i_particle = 0
+        self.calculate_distances(0)
+        self.calculate_LJ_potential(0, use_upper_cutoff=0.9)
+        E_1 = self.E_pot(0)
+        counter = 0
+        print("MC simulation will be performed over %i steps" % (self.steps))
+        while (step < self.steps):
+            counter += 1
+            "copy coordinates of current step to next step"
+            self.trajectories[:, 0, step+1] = self.trajectories[:, 0, step]
+            self.trajectories[:, 1, step+1] = self.trajectories[:, 1, step]
+            "move the particle i into random direction"
+            self.move_single_particle(i_particle, step, length=r_length, random_direction=True)
+            self.calculate_distances(step+1)
+            self.calculate_LJ_potential(step+1, use_upper_cutoff=0.9)
+            E_2 = self.E_pot(step+1)
+            # print(E_2)
+            "if energy decreased, accept step"
+            if E_1 > E_2:
+                step += 1
+                E_1 = E_2
+            else:
+                P = np.exp(- (E_2-E_1) / (con.R * T) )
+                q = np.random.uniform(0,1)
+                "else, check for Metropolis criteria"
+                if q < P:
+                    step += 1
+                    E_1 = E_2
+            "if the move is discarded, step is not increased and thereby the \
+             coordinated of step+1 will be overwritten in the next move"
+            i_particle = (i_particle + 1) % self.n_particles
+        print("The simulation ran", step, "steps")
+        print("Counter:", counter)
+
+
 
     def run_SD(self, step_length=0.01, plot_from=False):
         """ method to run the minimisation of the total potential energy of
@@ -370,9 +431,10 @@ class box_simulation():
             continue_moving = True
 
             while continue_moving and step<self.steps:
-                self.move(step, r[0], r[1], length=step_length)
+                self.move_all_particles(step, r[0], r[1], length=step_length)
                 self.calculate_distances(step+1)
-                self.calculate_LJ_potential_and_force(step+1, use_lower_cutoff=False)
+                self.calculate_LJ_potential(step+1, use_lower_cutoff=False)
+                self.calculate_LJ_force(step+1, use_lower_cutoff=False)
                 E_2 = self.E_pot(step+1)
                 E_1_minus_E_2[step] = E_1-E_2
                 E_1 = E_2
@@ -419,7 +481,7 @@ class box_simulation():
             plt.tight_layout()
             plt.show()
 
-    def plot_energies(self):
+    def plot_energies(self, only_Epot=False):
         E_kin = np.sum(self.kin_energies, axis=0) / 1000 # to make it kJ/mol
         E_pot = np.sum(self.Lennard_Jones_matrix[:,:,0,:], axis=(0,1)) / 2
         # divide by two because otherwise all values are double counted
@@ -435,22 +497,31 @@ class box_simulation():
 
         ax1.set_xlabel(r'Time t [ns]')
         ax1.set_ylabel('Energy [kJ/mol]')
-        ax2.set_xlabel(r'Time t [ns]')
-        ax2.set_ylabel('Energy [kJ/mol]')
+        # ax2.set_xlabel(r'Time t [ns]')
+        # ax2.set_ylabel('Energy [kJ/mol]')
         ax1.set_title('Energy as a function of time')
-        ax2.set_title('Difference in total energy per step')
+        # ax2.set_title('Difference in total energy per step')
 
         time_range = np.arange(self.steps+1) * 2e-6 #time in ns
+        def boltzmann(E, T):
+            return np.exp(-E / (con.R * T))
 
-        ax1.plot(time_range, E_kin, label=r"$E_{kin}$", color="g")
-        ax1.plot(time_range, E_pot, label=r"$E_{pot}$", color="r")
-        ax1.plot(time_range, E_tot, label=r"$E_{kin} + E_{pot}$", color="b")
-        ax1.axhline(E_tot[0], ls="--", color="b")
+        if only_Epot:
+            ax1.plot(time_range, E_pot, label=r"$E_{pot}$", color="r")
+            ax2.hist(E_pot, bins=30)
+            E_lin = np.linspace(0, 100, 100)
+            # ax2.plot(E_lin, boltzmann(E_lin, 293.15))
+
+        else:
+            ax1.plot(time_range, E_pot, label=r"$E_{pot}$", color="r")
+            ax1.plot(time_range, E_kin, label=r"$E_{kin}$", color="g")
+            ax1.plot(time_range, E_tot, label=r"$E_{kin} + E_{pot}$", color="b")
+        # ax1.axhline(E_tot[0], ls="--", color="b")
         ax1.legend()
 
-        ax2.plot(time_range[1:], E_tot_diff, label=r"$E_{tot}(t+\Delta t) - E_{tot}(t)$", color="b")
-        ax2.axhline(0, ls="--", color="b")
-        ax2.legend()
+        # ax2.plot(time_range[1:], E_tot_diff, label=r"$E_{tot}(t+\Delta t) - E_{tot}(t)$", color="b")
+        # ax2.axhline(0, ls="--", color="b")
+        # ax2.legend()
 
         plt.tight_layout()
         plt.show()

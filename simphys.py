@@ -18,6 +18,9 @@ class boltzmann_2D(rv_continuous):
         c = self.m / (k*self.T)
         return c * v * np.exp(-c/2 * v**2)
 
+def boltzmann_normalised(E, T):
+    return 1 / (con.R * T) * np.exp(-E / (con.R * T))
+
 def distance_pbc_transformation(distance, box_length):
     """ transforms the distance dx or dy with respect to periodic
         boundary conditions """
@@ -261,7 +264,7 @@ class box_simulation():
         self.trajectories[:, 3, step_index+1] = \
                 self.trajectories[:, 3, step_index] + 0.5 * (ay + ay_new) * dt
 
-    def simulate_MD(self, step_interval=1, use_lower_cutoff=False, use_upper_cutoff=False):
+    def MD_simulation(self, step_interval=1, use_lower_cutoff=False, use_upper_cutoff=False, T=100):
         """ method to run the simulation and create the trajectories """
 
         self.step_interval = step_interval
@@ -289,7 +292,7 @@ class box_simulation():
             # update all velocities
             self.verlet_update_velocities(step, dt=step_interval)
             # rescale new velocities with berendsen thermostat
-            self.thermostat[step+1,:] = self.berendsen_thermo(step+1, 0.0002, 100)
+            self.thermostat[step+1,:] = self.berendsen_thermo(step+1, 0.0002, T)
             # print('Temperature', self.get_T(step), end='\n')
 
         self.kin_energies = 0.5 * self.particle_mass * \
@@ -373,7 +376,7 @@ class box_simulation():
         self.trajectories[part_index, 1, step+1] = \
             (self.trajectories[part_index, 1, step] + r_y*length) % self.box[1]
 
-    def MC_simulation(self, r_length=0.01, T=50):
+    def MC_simulation(self, r_length=0.01, T=50, maximal_steps=100000):
         """ method to perform a MC simulation with the Metropolis algorithm """
         step = 0
         i_particle = 0
@@ -381,36 +384,45 @@ class box_simulation():
         self.calculate_LJ_potential(0, use_upper_cutoff=0.9)
         E_1 = self.E_pot(0)
         counter = 0
-        print("MC simulation will be performed over %i steps" % (self.steps))
-        while (step < self.steps):
+        print("MC simulation will be performed over %i accepted steps" % (self.steps))
+        P_list = []
+
+        for i in range(3*self.steps):
+            if step >= self.steps:
+                break
+            # progress
+            if (step/self.steps*100)%1==0:
+                print(int(step/self.steps*100), "% completed", end='\r')
+
             counter += 1
-            "copy coordinates of current step to next step"
-            self.trajectories[:, 0, step+1] = self.trajectories[:, 0, step]
-            self.trajectories[:, 1, step+1] = self.trajectories[:, 1, step]
-            "move the particle i into random direction"
+            # copy coordinates of current step to next step
+            self.trajectories[:, 0, step+1] = np.copy(self.trajectories[:, 0, step])
+            self.trajectories[:, 1, step+1] = np.copy(self.trajectories[:, 1, step])
+            # move the particle i into random direction
             self.move_single_particle(i_particle, step, length=r_length, random_direction=True)
             self.calculate_distances(step+1)
             self.calculate_LJ_potential(step+1, use_upper_cutoff=0.9)
             E_2 = self.E_pot(step+1)
-            # print(E_2)
-            "if energy decreased, accept step"
+            # if energy decreased, accept step
             if E_1 > E_2:
                 step += 1
                 E_1 = E_2
             else:
                 P = np.exp(- (E_2-E_1) / (con.R * T) )
+                P_list.append(P)
                 q = np.random.uniform(0,1)
-                "else, check for Metropolis criteria"
+                # else, check for Metropolis criteria
                 if q < P:
                     step += 1
                     E_1 = E_2
-            "if the move is discarded, step is not increased and thereby the \
-             coordinated of step+1 will be overwritten in the next move"
+            # if the move is discarded, step is not increased and thereby the
+            # coordinated of step+1 will be overwritten in the next move
             i_particle = (i_particle + 1) % self.n_particles
-        print("The simulation ran", step, "steps")
-        print("Counter:", counter)
+        print(30*'-')
+        print("Total steps:", counter)
 
-
+        plt.hist(P_list)
+        plt.show()
 
     def run_SD(self, step_length=0.01, plot_from=False):
         """ method to run the minimisation of the total potential energy of
@@ -503,14 +515,16 @@ class box_simulation():
         # ax2.set_title('Difference in total energy per step')
 
         time_range = np.arange(self.steps+1) * 2e-6 #time in ns
-        def boltzmann(E, T):
-            return np.exp(-E / (con.R * T))
 
         if only_Epot:
+            print("E_pot at time 0:", E_pot[0])
             ax1.plot(time_range, E_pot, label=r"$E_{pot}$", color="r")
-            ax2.hist(E_pot, bins=30)
-            E_lin = np.linspace(0, 100, 100)
-            # ax2.plot(E_lin, boltzmann(E_lin, 293.15))
+            ax2.hist(E_pot, bins=20, density=1, label=r"Distribution of energy states in MC")
+            E_lin = np.linspace(0, E_pot.max(), 100)
+            ax2.plot(E_lin, boltzmann_normalised(E_lin, 293.15), label=r"Boltzmann distribution")
+            ax2.set_xlabel('Energy [kJ/mol]')
+            ax2.set_ylabel('Normalised events')
+            ax2.legend()
 
         else:
             ax1.plot(time_range, E_pot, label=r"$E_{pot}$", color="r")
@@ -522,6 +536,30 @@ class box_simulation():
         # ax2.plot(time_range[1:], E_tot_diff, label=r"$E_{tot}(t+\Delta t) - E_{tot}(t)$", color="b")
         # ax2.axhline(0, ls="--", color="b")
         # ax2.legend()
+
+        plt.tight_layout()
+        plt.show()
+    
+    def Epot_convergence(self):
+        E_pot = np.sum(self.Lennard_Jones_matrix[:,:,0,:], axis=(0,1)) / 2
+        E_pot_mean = np.zeros(len(E_pot))
+        E_pot_std  = np.zeros(len(E_pot))
+        for i in range(len(E_pot)):
+            E_pot_mean[i] = np.mean(E_pot[:i+1])
+            E_pot_std[i]  = np.var(E_pot[:i+1])
+
+        # set up the figure for the box plot
+        fig, (ax1, ax2) = plt.subplots(1, 2)
+        fig.set_figheight(4)
+        fig.set_figwidth(13)
+        ax1.set_title(r"Mean of $E_{pot}$")
+        ax1.set_xlabel("N")
+        ax1.set_ylabel(r"$\left<E_{pot}\right>$")
+        ax2.set_title(r"Standard deviation of $E_{pot}$")
+        ax2.set_xlabel("N")
+        ax2.set_ylabel(r"$\sigma$")
+        ax1.plot(E_pot_mean, label=r"$\left<E_{pot}\right>$")
+        ax2.plot(E_pot_std)#*np.sqrt(np.arange(1,len(E_pot_std)+1)))
 
         plt.tight_layout()
         plt.show()
@@ -564,7 +602,7 @@ class box_simulation():
         plt.tight_layout()
         plt.show()
 
-    def animate_trajectories(self, animation_interval=30, dot_size=5, steps=5):
+    def animate_trajectories(self, ms_between_frames=30, dot_size=5, steps_per_frame=5):
         """ method to animate the particle movement """
         fig, ax = plt.subplots()
         fig.set_figheight(6)
@@ -584,8 +622,8 @@ class box_simulation():
                 line.set_data([], [])
             return lines
 
-        x_animate = self.trajectories[:,0,::steps]
-        y_animate = self.trajectories[:,1,::steps]
+        x_animate = self.trajectories[:,0,::steps_per_frame]
+        y_animate = self.trajectories[:,1,::steps_per_frame]
         print(x_animate.shape)
 
         def animate(i):
@@ -596,10 +634,8 @@ class box_simulation():
             return lines
 
         anim = animation.FuncAnimation(fig, animate, init_func=init, \
-                                   frames=x_animate.shape[1], interval=animation_interval, blit=True)
-        #plt.show()
+                                   frames=x_animate.shape[1], interval=ms_between_frames, blit=True)
         return HTML(anim.to_html5_video())
-        #return HTML(anim.to_jshtml())
 
     def occupation(self, start=0, end=0, n_bins=50):
         """ method to plot the occupation on the x-y plane as well

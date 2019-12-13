@@ -408,7 +408,7 @@ class box_simulation():
                 step += 1
                 E_1 = E_2
             else:
-                P = np.exp(- (E_2-E_1) / (con.R * T) )
+                P = np.exp(- (E_2-E_1) / (con.R * T) * 1000)
                 P_list.append(P)
                 q = np.random.uniform(0,1)
                 # else, check for Metropolis criteria
@@ -546,7 +546,7 @@ class box_simulation():
         E_pot_std  = np.zeros(len(E_pot))
         for i in range(len(E_pot)):
             E_pot_mean[i] = np.mean(E_pot[:i+1])
-            E_pot_std[i]  = np.var(E_pot[:i+1])
+            E_pot_std[i]  = np.std(E_pot[:i+1])
 
         # set up the figure for the box plot
         fig, (ax1, ax2) = plt.subplots(1, 2)
@@ -559,10 +559,11 @@ class box_simulation():
         ax2.set_xlabel("N")
         ax2.set_ylabel(r"$\sigma$")
         ax1.plot(E_pot_mean, label=r"$\left<E_{pot}\right>$")
-        ax2.plot(E_pot_std)#*np.sqrt(np.arange(1,len(E_pot_std)+1)))
+        ax2.plot(E_pot_std)# * np.sqrt(np.arange(1,len(E_pot_std)+1)))
 
         plt.tight_layout()
         plt.show()
+        return E_pot
 
     def plot_temperatures(self):
         fig, (ax1, ax2) = plt.subplots(1, 2)

@@ -106,6 +106,7 @@ class box_simulation():
         self.steps = n_steps
         self.particle_distances = []
         self.trajectories = []
+        self.spins = []
         self.kin_energies = []
         self.pot_energies = []
         self.Lennard_Jones_matrix = []
@@ -115,45 +116,30 @@ class box_simulation():
     def init_box(self, x, y):
         self.box = [x, y]
 
-    def generate_particles(self, test_particles=[], particle_radius=1, v=1, m=1, 
-                           load_from_file=False, new_velocities=False, T=0):
+    def generate_particles(self, test_particles=[], v=1, m=1, T=0):
         """ method to generate a starting position of particles and velocities
             distributed randomly in the box. Also creates the essential arrays
             to save the simulation result. """
 
-        if load_from_file:
-            traj_from_file = np.loadtxt(load_from_file, dtype=float)
-            self.n_particles = traj_from_file.shape[0]
-            self.trajectories = np.zeros([self.n_particles, 4, self.steps+1])
-            self.trajectories[:,:,0] = traj_from_file
-            print("The initial state is loaded from the file '%s'" \
-                  %(load_from_file))
-            if new_velocities:
-                v_angles = np.random.uniform(0, 2*np.pi, self.n_particles)
-                self.trajectories[:,2,0] = v * np.cos(v_angles)
-                self.trajectories[:,3,0] = v * np.sin(v_angles)
+        # generate the new particles with random numbers
+        n_random = self.n_particles
+        #total number incl. test particles
+        self.n_particles += len(test_particles) 
+        self.trajectories = np.zeros([self.n_particles, 4, self.steps+1])
 
+        positions = np.random.uniform(0, self.box[0], (2, n_random))
+        v_angles = np.random.uniform(0, 2*np.pi, n_random)
+        self.trajectories[:n_random,0,0] = positions[0]
+        self.trajectories[:n_random,1,0] = positions[1]
+        self.trajectories[:n_random,2,0] = v * np.cos(v_angles)
+        self.trajectories[:n_random,3,0] = v * np.sin(v_angles)
 
-        else:
-            # generate the new particles with random numbers
-            n_random = self.n_particles
-            #total number incl. test particles
-            self.n_particles += len(test_particles) 
-            self.trajectories = np.zeros([self.n_particles, 4, self.steps+1])
-
-            positions = np.random.uniform(0, self.box[0], (2, n_random))
-            v_angles = np.random.uniform(0, 2*np.pi, n_random)
-            self.trajectories[:n_random,0,0] = positions[0]
-            self.trajectories[:n_random,1,0] = positions[1]
-            self.trajectories[:n_random,2,0] = v * np.cos(v_angles)
-            self.trajectories[:n_random,3,0] = v * np.sin(v_angles)
-
-            # option to add specific test_particles
-            if test_particles != []:
-                i = 0
-                for particle in test_particles:
-                    self.trajectories[n_random+i,:,0] = particle
-                    i += 1
+        # option to add specific test_particles
+        if test_particles != []:
+            i = 0
+            for particle in test_particles:
+                self.trajectories[n_random+i,:,0] = particle
+                i += 1
         if T:
             # assign velocities according to 2D boltzmann distrib.
             print('Assigning velocities according to Maxwell Boltzmann distribution at T=%s'%(T))
@@ -180,6 +166,27 @@ class box_simulation():
         np.savetxt(filename, self.trajectories[:,:,step])
         print("Saved the particle positions of step %i to file '%s'" \
                %(step,filename))
+
+    def load_particles(self, filename, new_velocities=False, v=1):
+        """ method to load saved particle positions """
+        traj_from_file = np.loadtxt(filename, dtype=float)
+        self.n_particles = traj_from_file.shape[0]
+        self.trajectories = np.zeros([self.n_particles, 4, self.steps+1])
+        self.trajectories[:,:,0] = traj_from_file
+
+        print("The initial state loaded from the file '%s'" %(filename))
+        if new_velocities:
+            v_angles = np.random.uniform(0, 2*np.pi, self.n_particles)
+            self.trajectories[:,2,0] = v * np.cos(v_angles)
+            self.trajectories[:,3,0] = v * np.sin(v_angles)
+
+        # also setup the necessary arrays to save the simulaiton
+        self.particle_distances   = np.zeros([self.n_particles, \
+                                            self.n_particles, 3, self.steps+1])
+        self.Lennard_Jones_matrix = np.zeros([self.n_particles, \
+                                            self.n_particles, 3, self.steps+1])
+        self.kin_energies         = np.zeros([self.n_particles, self.steps+1])
+        self.pot_energies         = np.zeros([self.n_particles, self.steps+1])
 
     def calculate_distances(self, step_index):
         """ method for calculating all distances between particles at a step"""

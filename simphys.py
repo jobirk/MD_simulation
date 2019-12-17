@@ -18,9 +18,6 @@ class boltzmann_2D(rv_continuous):
         c = self.m / (k*self.T)
         return c * v * np.exp(-c/2 * v**2)
 
-def boltzmann_normalised(E, T):
-    return 1 / (con.R * T) * np.exp(-E / (con.R * T))
-
 def distance_pbc_transformation(distance, box_length):
     """ transforms the distance dx or dy with respect to periodic
         boundary conditions """
@@ -62,13 +59,15 @@ def Lennard_Jones_force(r, dx, dy, C_12=9.847044e-6, C_6=6.2647225e-3,
     F[1][zero_indices] = 0
     return F
 
-def Lennard_Jones(r, C_12=9.847044e-6, C_6=6.2647225e-3, cutoff=0.33, \
-                  use_lower_cutoff=True):
+def Lennard_Jones(distances, C_12=9.847044e-6, C_6=6.2647225e-3, cutoff=0.33, \
+                  use_lower_cutoff=True, upper_cutoff=0):
     """ function that calculates an array of V_ij values (in J/mol) 
         corresponding to a distance array containing r_ij values (distances) """
     # the distance array usually contains entries with r=0, e.g. r_11
     # but we only want to use the non-zero entries for the calculation
+    r = np.copy(distances)
     non_diagonal_indices = np.where(r!=0)
+    diagonal_indices = np.where(r==0)
     V = np.zeros(r.shape)
     r_pow_6 = r[non_diagonal_indices]**6
 
@@ -83,8 +82,14 @@ def Lennard_Jones(r, C_12=9.847044e-6, C_6=6.2647225e-3, cutoff=0.33, \
         V[cutoff_indices] = LJ_cutoff + \
             Lennard_Jones_force(np.array([cutoff]), np.array([cutoff]), 
                                 np.array([0]))[0] * (cutoff-r[cutoff_indices]) 
-        diagonal_indices = np.where(r==0)
         V[diagonal_indices] = 0
+
+    if upper_cutoff==True:
+        # correct the values above the cutoff
+        cutoff_indices = np.where(r>upper_cutoff)
+        # this is the potential if assuming a 
+        # constant slope for r < cutoff
+        V[cutoff_indices] = 0
 
     return V
 
@@ -196,15 +201,16 @@ class box_simulation():
         self.particle_distances[:, :, 2, step_index] = r 
 
     def calculate_LJ_potential(self, step_index, \
-                        use_lower_cutoff=False, use_upper_cutoff=False):
+                        use_lower_cutoff=False, upper_cutoff=0):
         """ function that calculates the matrix of LJ potentials 
             and forces between all particles """
         self.Lennard_Jones_matrix[:, :, 0, step_index] = \
                 Lennard_Jones(self.particle_distances[:, :, 2, step_index], 
-                              use_lower_cutoff=use_lower_cutoff)
+                              use_lower_cutoff=use_lower_cutoff, 
+                              upper_cutoff=upper_cutoff)
 
     def calculate_LJ_force(self, step_index, \
-                        use_lower_cutoff=False, use_upper_cutoff=False):
+                        use_lower_cutoff=False, upper_cutoff=False):
         """ function that calculates the matrix of LJ potentials 
             and forces between all particles """
         self.Lennard_Jones_matrix[:, :, 1, step_index] = \
@@ -212,18 +218,17 @@ class box_simulation():
                                 self.particle_distances[:, :, 0, step_index],
                                 self.particle_distances[:, :, 1, step_index], 
                                 use_lower_cutoff=use_lower_cutoff,
-                                use_upper_cutoff=use_upper_cutoff)[0]
+                                use_upper_cutoff=upper_cutoff)[0]
         self.Lennard_Jones_matrix[:, :, 2, step_index] = \
             Lennard_Jones_force(self.particle_distances[:, :, 2, step_index], 
                                 self.particle_distances[:, :, 0, step_index],
                                 self.particle_distances[:, :, 1, step_index],
                                 use_lower_cutoff=use_lower_cutoff,
-                                use_upper_cutoff=use_upper_cutoff)[1]
+                                use_upper_cutoff=upper_cutoff)[1]
 
     def verlet_update_positions(self, step_index, dt=1):
         """ function that moves a particle according to the 
             velocity verlet algorithm """
-        #p = self.particles[particle_index]
         m = self.particle_mass
 
         # sum potential and forces along one (the second) particle index
@@ -264,15 +269,13 @@ class box_simulation():
         self.trajectories[:, 3, step_index+1] = \
                 self.trajectories[:, 3, step_index] + 0.5 * (ay + ay_new) * dt
 
-    def MD_simulation(self, step_interval=1, use_lower_cutoff=False, use_upper_cutoff=False, T=100):
+    def MD_simulation(self, step_interval=1, use_lower_cutoff=False, upper_cutoff=False, T=100):
         """ method to run the simulation and create the trajectories """
 
         self.step_interval = step_interval
         self.calculate_distances(0)
-        self.calculate_LJ_potential(0, use_lower_cutoff=use_lower_cutoff,
-                                                 use_upper_cutoff=use_upper_cutoff)
-        self.calculate_LJ_force(0, use_lower_cutoff=use_lower_cutoff,
-                                                 use_upper_cutoff=use_upper_cutoff)
+        self.calculate_LJ_potential(0, use_lower_cutoff=use_lower_cutoff, upper_cutoff=upper_cutoff)
+        self.calculate_LJ_force(0, use_lower_cutoff=use_lower_cutoff, upper_cutoff=upper_cutoff)
         self.thermostat = np.zeros([self.steps+1, 2]) # T and lambda for all steps
 
         self.thermostat[0, 0] = self.get_T(0)
@@ -285,10 +288,10 @@ class box_simulation():
             self.calculate_distances(step+1)
             self.calculate_LJ_potential(step+1,
                     use_lower_cutoff=use_lower_cutoff,
-                    use_upper_cutoff=use_upper_cutoff)
+                    upper_cutoff=upper_cutoff)
             self.calculate_LJ_force(step+1,
                     use_lower_cutoff=use_lower_cutoff,
-                    use_upper_cutoff=use_upper_cutoff)
+                    upper_cutoff=upper_cutoff)
             # update all velocities
             self.verlet_update_velocities(step, dt=step_interval)
             # rescale new velocities with berendsen thermostat
@@ -381,11 +384,12 @@ class box_simulation():
         step = 0
         i_particle = 0
         self.calculate_distances(0)
-        self.calculate_LJ_potential(0, use_upper_cutoff=0.9)
+        self.calculate_LJ_potential(0, upper_cutoff=0.9)
         E_1 = self.E_pot(0)
         counter = 0
         print("MC simulation will be performed over %i accepted steps" % (self.steps))
-        P_list = []
+        P_list = [] # list to store the probabilities when checking for the Metropolis criteria
+        energies = np.zeros(self.steps)
 
         for i in range(3*self.steps):
             if step >= self.steps:
@@ -395,34 +399,37 @@ class box_simulation():
                 print(int(step/self.steps*100), "% completed", end='\r')
 
             counter += 1
+            energies[step] = E_1
             # copy coordinates of current step to next step
-            self.trajectories[:, 0, step+1] = np.copy(self.trajectories[:, 0, step])
-            self.trajectories[:, 1, step+1] = np.copy(self.trajectories[:, 1, step])
+            self.trajectories[:, :, step+1] = np.copy(self.trajectories[:, :, step])
             # move the particle i into random direction
             self.move_single_particle(i_particle, step, length=r_length, random_direction=True)
             self.calculate_distances(step+1)
-            self.calculate_LJ_potential(step+1, use_upper_cutoff=0.9)
+            self.calculate_LJ_potential(step+1, upper_cutoff=0.9)
             E_2 = self.E_pot(step+1)
             # if energy decreased, accept step
             if E_1 > E_2:
                 step += 1
                 E_1 = E_2
             else:
-                P = np.exp(- (E_2-E_1) / (con.R * T) * 1000)
+                # else, check for Metropolis criteria
+                P = np.exp(- (E_2-E_1) * 1000 / (con.R * T))
                 P_list.append(P)
                 q = np.random.uniform(0,1)
-                # else, check for Metropolis criteria
-                if q < P:
+                if np.log(q) < np.log(P):
                     step += 1
                     E_1 = E_2
-            # if the move is discarded, step is not increased and thereby the
+            # if the move is not accepted, step is not increased and thereby the
             # coordinated of step+1 will be overwritten in the next move
             i_particle = (i_particle + 1) % self.n_particles
+        print("100% completed.")
         print(30*'-')
         print("Total steps:", counter)
 
-        plt.hist(P_list)
-        plt.show()
+        # plt.hist(P_list)
+        # plt.show()
+        # plt.plot(energies)
+        # plt.show()
 
     def run_SD(self, step_length=0.01, plot_from=False):
         """ method to run the minimisation of the total potential energy of
@@ -494,14 +501,8 @@ class box_simulation():
             plt.show()
 
     def plot_energies(self, only_Epot=False):
-        E_kin = np.sum(self.kin_energies, axis=0) / 1000 # to make it kJ/mol
         E_pot = np.sum(self.Lennard_Jones_matrix[:,:,0,:], axis=(0,1)) / 2
         # divide by two because otherwise all values are double counted
-        E_kin_diff = E_kin[1:] - E_kin[:-1]
-        E_pot_diff = E_pot[1:] - E_pot[:-1]
-        E_tot = E_kin + E_pot
-        E_diff = E_kin - E_pot
-        E_tot_diff = E_kin_diff + E_pot_diff
         # set up the figure for the box plot
         fig, (ax1, ax2) = plt.subplots(1, 2)
         fig.set_figheight(4)
@@ -517,16 +518,22 @@ class box_simulation():
         time_range = np.arange(self.steps+1) * 2e-6 #time in ns
 
         if only_Epot:
+            n_start=0
             print("E_pot at time 0:", E_pot[0])
-            ax1.plot(time_range, E_pot, label=r"$E_{pot}$", color="r")
-            ax2.hist(E_pot, bins=20, density=1, label=r"Distribution of energy states in MC")
-            E_lin = np.linspace(0, E_pot.max(), 100)
-            ax2.plot(E_lin, boltzmann_normalised(E_lin, 293.15), label=r"Boltzmann distribution")
+            ax1.plot(time_range[n_start:], E_pot[n_start:], label=r"$E_{pot}$", color="r")
+            ax2.hist(E_pot, bins=20, density=True, label=r"Distribution of energy states in MC")
+            E_lin = np.linspace(E_pot.min(), E_pot.max(), 100)
             ax2.set_xlabel('Energy [kJ/mol]')
             ax2.set_ylabel('Normalised events')
             ax2.legend()
 
         else:
+            E_kin = np.sum(self.kin_energies, axis=0) / 1000 # to make it kJ/mol
+            E_kin_diff = E_kin[1:] - E_kin[:-1]
+            E_pot_diff = E_pot[1:] - E_pot[:-1]
+            E_tot = E_kin + E_pot
+            E_diff = E_kin - E_pot
+            E_tot_diff = E_kin_diff + E_pot_diff
             ax1.plot(time_range, E_pot, label=r"$E_{pot}$", color="r")
             ax1.plot(time_range, E_kin, label=r"$E_{kin}$", color="g")
             ax1.plot(time_range, E_tot, label=r"$E_{kin} + E_{pot}$", color="b")
@@ -540,26 +547,29 @@ class box_simulation():
         plt.tight_layout()
         plt.show()
     
-    def Epot_convergence(self):
+    def Epot_convergence(self, n_start=0):
         E_pot = np.sum(self.Lennard_Jones_matrix[:,:,0,:], axis=(0,1)) / 2
-        E_pot_mean = np.zeros(len(E_pot))
-        E_pot_std  = np.zeros(len(E_pot))
-        for i in range(len(E_pot)):
-            E_pot_mean[i] = np.mean(E_pot[:i+1])
-            E_pot_std[i]  = np.std(E_pot[:i+1])
+        E_pot_mean      = np.zeros(len(E_pot))
+        E_pot_mean_std  = np.zeros(len(E_pot))
+        for i in tqdm(range(len(E_pot))):
+            E_pot_mean[i]     = np.mean(E_pot[:i+1])
+            E_pot_mean_std[i] = np.std(E_pot_mean[:i+1], ddof=1)
 
         # set up the figure for the box plot
-        fig, (ax1, ax2) = plt.subplots(1, 2)
+        fig, (ax1, ax2, ax3) = plt.subplots(1, 3)
         fig.set_figheight(4)
         fig.set_figwidth(13)
         ax1.set_title(r"Mean of $E_{pot}$")
         ax1.set_xlabel("N")
         ax1.set_ylabel(r"$\left<E_{pot}\right>$")
-        ax2.set_title(r"Standard deviation of $E_{pot}$")
+        ax2.set_title(r"Standard deviation of $\left<E_{pot}\right>$")
         ax2.set_xlabel("N")
-        ax2.set_ylabel(r"$\sigma$")
-        ax1.plot(E_pot_mean, label=r"$\left<E_{pot}\right>$")
-        ax2.plot(E_pot_std)# * np.sqrt(np.arange(1,len(E_pot_std)+1)))
+        ax2.set_ylabel(r"$\sigma \cdot \sqrt{N}$")
+        ax1.plot(E_pot_mean[n_start:], label=r"$\left<E_{pot}\right>$")
+        ax2.plot(E_pot_mean_std[n_start:] * np.sqrt(np.arange(1,len(E_pot_mean_std[n_start:])+1)), label=r"$\sigma * \sqrt{N}$")
+        ax3.plot(E_pot_mean_std[n_start:], label=r"$\sigma$")
+        ax2.legend()
+        ax3.legend()
 
         plt.tight_layout()
         plt.show()

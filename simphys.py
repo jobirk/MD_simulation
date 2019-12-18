@@ -116,7 +116,7 @@ class box_simulation():
     def init_box(self, x, y):
         self.box = [x, y]
 
-    def generate_particles(self, test_particles=[], v=1, m=1, T=0):
+    def generate_particles(self, test_particles=[], v=1, m=1, T=0, grid=False):
         """ method to generate a starting position of particles and velocities
             distributed randomly in the box. Also creates the essential arrays
             to save the simulation result. """
@@ -127,7 +127,28 @@ class box_simulation():
         self.n_particles += len(test_particles) 
         self.trajectories = np.zeros([self.n_particles, 4, self.steps+1])
 
-        positions = np.random.uniform(0, self.box[0], (2, n_random))
+        # >>> positions <<<
+        if grid:
+            # place particles in a grid
+            n_row = np.sqrt(self.n_particles)
+            if n_row%1 != 0:
+                print(">>> ERROR: Please choose number of particles which is the square root of an integer")
+            n_row = int(n_row)
+            dist_neighbour = self.box[0] / n_row
+            positions = np.zeros([2, self.n_particles])
+            print("generating particles arranged in a grid")
+            particle = 0
+            for i in range(n_row):
+                x = dist_neighbour/2 + i * dist_neighbour
+                for j in range(n_row):
+                    y = dist_neighbour/2 + j * dist_neighbour
+                    positions[:, particle] = (x,y)
+                    particle += 1
+
+        else:
+            positions = np.random.uniform(0, self.box[0], (2, n_random))
+
+        # >>> set the positions and random velocities <<<
         v_angles = np.random.uniform(0, 2*np.pi, n_random)
         self.trajectories[:n_random,0,0] = positions[0]
         self.trajectories[:n_random,1,0] = positions[1]
@@ -142,6 +163,7 @@ class box_simulation():
                 i += 1
         if T:
             # assign velocities according to 2D boltzmann distrib.
+            # >>> overwrite the previously defined velocities
             print('Assigning velocities according to Maxwell Boltzmann distribution at T=%s'%(T))
             bd = boltzmann_2D(a=0, b=1000, name='boltzmann2D')
             bd.set_parameters(m=self.particle_mass, T=T)
@@ -167,7 +189,7 @@ class box_simulation():
         print("Saved the particle positions of step %i to file '%s'" \
                %(step,filename))
 
-    def load_particles(self, filename, new_velocities=False, v=1):
+    def load_particles(self, filename, new_velocities=False, v=1, T=2):
         """ method to load saved particle positions """
         traj_from_file = np.loadtxt(filename, dtype=float)
         self.n_particles = traj_from_file.shape[0]
@@ -176,6 +198,18 @@ class box_simulation():
 
         print("The initial state loaded from the file '%s'" %(filename))
         if new_velocities:
+            v_angles = np.random.uniform(0, 2*np.pi, self.n_particles)
+            self.trajectories[:,2,0] = v * np.cos(v_angles)
+            self.trajectories[:,3,0] = v * np.sin(v_angles)
+        if T:
+            # assign velocities according to 2D boltzmann distrib.
+            print('Assigning velocities according to Maxwell Boltzmann distribution at T=%s'%(T))
+            bd = boltzmann_2D(a=0, b=1000, name='boltzmann2D')
+            bd.set_parameters(m=self.particle_mass, T=T)
+            boltzmann_velocities = np.zeros(self.n_particles)
+            for i in range(self.n_particles):
+                boltzmann_velocities[i] = bd.rvs()
+            v = boltzmann_velocities
             v_angles = np.random.uniform(0, 2*np.pi, self.n_particles)
             self.trajectories[:,2,0] = v * np.cos(v_angles)
             self.trajectories[:,3,0] = v * np.sin(v_angles)
@@ -276,6 +310,60 @@ class box_simulation():
         self.trajectories[:, 3, step_index+1] = \
                 self.trajectories[:, 3, step_index] + 0.5 * (ay + ay_new) * dt
 
+    def calc_F_direction(self, step):
+        """ returns the normalised F vector at given time step """
+        self.calculate_distances(step)
+        self.calculate_LJ_potential(step, use_lower_cutoff=False)
+        self.calculate_LJ_force(step, use_lower_cutoff=False)
+        Fx = np.sum(self.Lennard_Jones_matrix[:, :, 1, step], axis=1)
+        Fy = np.sum(self.Lennard_Jones_matrix[:, :, 2, step], axis=1)
+        F_abs = np.sqrt(Fx**2 + Fy**2)
+        # build r vector of length 0.05nm along F
+        r_x = Fx / F_abs
+        r_y = Fy / F_abs
+        return np.array([r_x, r_y])
+
+    def E_pot(self, step):
+        """ returns the potential energie at a given simulation step """
+        return np.sum(self.Lennard_Jones_matrix[:, :, 0, step], axis=(0,1))/2
+
+    def get_T(self, step, N=0):
+        """ returns the temperature in the box at given sim. step """
+        if N==0:
+            N = self.n_particles
+        k = 8.13 # Gas constant
+        T = self.particle_mass / (2 * k * N) * \
+            np.sum(self.trajectories[:N,2,step]**2 + self.trajectories[:N,3,step]**2)
+        return T
+
+    def berendsen_thermo(self, step, tau, T0):
+        """ method to scale the velocities with the berendsen thermostat """
+        T = self.get_T(step)
+        if T == 0:
+            T = 1e-42
+        lam = np.sqrt( 1 + self.step_interval / tau * (T0 / T -1 ))
+        # multiply the velocities of the given step with the factor lambda
+        self.trajectories[:, 2:4, step] *= lam
+        return T, lam
+    
+    def move_all_particles(self, step, r_x=0, r_y=0, length=0.05):
+        """ moves all particles along r """
+        self.trajectories[:, 0, step+1] = (self.trajectories[:, 0, step] + \
+                                           r_x*length) % self.box[0]
+        self.trajectories[:, 1, step+1] = (self.trajectories[:, 1, step] + \
+                                           r_y*length) % self.box[1]
+
+    def move_single_particle(self, part_index, step, r_x=0, r_y=0, \
+                             random_direction=False, length=0.05):
+        if random_direction:
+            phi = np.random.uniform(0, 2*np.pi)
+            r_x = np.cos(phi)
+            r_y = np.sin(phi)
+        self.trajectories[part_index, 0, step+1] = \
+            (self.trajectories[part_index, 0, step] + r_x*length) % self.box[0]
+        self.trajectories[part_index, 1, step+1] = \
+            (self.trajectories[part_index, 1, step] + r_y*length) % self.box[1]
+
     def MD_simulation(self, step_interval=1, use_lower_cutoff=False, upper_cutoff=False, T=100):
         """ method to run the simulation and create the trajectories """
 
@@ -307,84 +395,6 @@ class box_simulation():
 
         self.kin_energies = 0.5 * self.particle_mass * \
                 (self.trajectories[:,2,:]**2 + self.trajectories[:,3,:]**2)
-
-    def calc_F_direction(self, step):
-        """ returns the normalised F vector at given time step """
-        self.calculate_distances(step)
-        self.calculate_LJ_potential(step, use_lower_cutoff=False)
-        self.calculate_LJ_force(step, use_lower_cutoff=False)
-        Fx = np.sum(self.Lennard_Jones_matrix[:, :, 1, step], axis=1)
-        Fy = np.sum(self.Lennard_Jones_matrix[:, :, 2, step], axis=1)
-        F_abs = np.sqrt(Fx**2 + Fy**2)
-        # build r vector of length 0.05nm along F
-        r_x = Fx / F_abs
-        r_y = Fy / F_abs
-        return np.array([r_x, r_y])
-
-    def E_pot(self, step):
-        """ returns the potential energie at a given simulation step """
-        return np.sum(self.Lennard_Jones_matrix[:, :, 0, step], axis=(0,1))/2
-
-    def get_T(self, step, N=0):
-        """ returns the temperature in the box at given sim. step """
-        if N==0:
-            N = self.n_particles
-        k = 8.13 # Gas constant
-        T = self.particle_mass / (2 * k * N) * \
-            np.sum(self.trajectories[:N,2,step]**2 + self.trajectories[:N,3,step]**2)
-        return T
-
-    def temperature_analysis(self, N_start=3, deltaN=1):
-        N_array = np.arange(N_start, self.n_particles, deltaN)
-        rel_T_variances = np.zeros(len(N_array))
-        for i in tqdm(range(len(N_array))):
-            temperatures = np.array([self.get_T(step, N_array[i]) for step in range(self.steps)])
-            var_T = np.var(temperatures)
-            mean_T = np.mean(temperatures)
-            rel_T_variances[i] = var_T / mean_T**2
-
-        fig, (ax1) = plt.subplots(1, 1)
-        fig.set_figheight(4)
-        fig.set_figwidth(6)
-
-        ax1.set_xlabel(r'N')
-        ax1.set_ylabel(r'$\sigma_{T}^2$ / $\left<T\right>^2$')
-        ax1.set_title('Relative variance of the temperature')
-        
-        ax1.plot(N_array, rel_T_variances, label=r'$\sigma_{T}^2$ / $\left<T\right>^2$')
-        ax1.plot(N_array, 1/N_array, label=r'1/N')
-        ax1.legend()
-
-        plt.tight_layout()
-        plt.show()
-
-    def berendsen_thermo(self, step, tau, T0):
-        """ method to scale the velocities with the berendsen thermostat """
-        T = self.get_T(step)
-        if T == 0:
-            T = 1e-42
-        lam = np.sqrt( 1 + self.step_interval / tau * (T0 / T -1 ))
-        # multiply the velocities of the given step with the factor lambda
-        self.trajectories[:, 2:4, step] *= lam
-        return T, lam
-    
-    def move_all_particles(self, step, r_x=0, r_y=0, length=0.05):
-        """ moves all particles along r """
-        self.trajectories[:, 0, step+1] = (self.trajectories[:, 0, step] + \
-                                           r_x*length) % self.box[0]
-        self.trajectories[:, 1, step+1] = (self.trajectories[:, 1, step] + \
-                                           r_y*length) % self.box[1]
-
-    def move_single_particle(self, part_index, step, r_x=0, r_y=0, \
-                             random_direction=False, length=0.05):
-        if random_direction:
-            phi = np.random.uniform(0, 2*np.pi)
-            r_x = np.cos(phi)
-            r_y = np.sin(phi)
-        self.trajectories[part_index, 0, step+1] = \
-            (self.trajectories[part_index, 0, step] + r_x*length) % self.box[0]
-        self.trajectories[part_index, 1, step+1] = \
-            (self.trajectories[part_index, 1, step] + r_y*length) % self.box[1]
 
     def MC_simulation(self, r_length=0.01, T=50, maximal_steps=100000):
         """ method to perform a MC simulation with the Metropolis algorithm """
@@ -553,6 +563,30 @@ class box_simulation():
 
         plt.tight_layout()
         plt.show()
+
+    def temperature_analysis(self, N_start=3, deltaN=1):
+        N_array = np.arange(N_start, self.n_particles, deltaN)
+        rel_T_variances = np.zeros(len(N_array))
+        for i in tqdm(range(len(N_array))):
+            temperatures = np.array([self.get_T(step, N_array[i]) for step in range(self.steps)])
+            var_T = np.var(temperatures)
+            mean_T = np.mean(temperatures)
+            rel_T_variances[i] = var_T / mean_T**2
+
+        fig, (ax1) = plt.subplots(1, 1)
+        fig.set_figheight(4)
+        fig.set_figwidth(6)
+
+        ax1.set_xlabel(r'N')
+        ax1.set_ylabel(r'$\sigma_{T}^2$ / $\left<T\right>^2$')
+        ax1.set_title('Relative variance of the temperature')
+        
+        ax1.plot(N_array, rel_T_variances, label=r'$\sigma_{T}^2$ / $\left<T\right>^2$')
+        ax1.plot(N_array, 1/N_array, label=r'1/N')
+        ax1.legend()
+
+        plt.tight_layout()
+        plt.show()
     
     def Epot_convergence(self, n_start=0):
         E_pot = np.sum(self.Lennard_Jones_matrix[:,:,0,:], axis=(0,1)) / 2
@@ -718,7 +752,7 @@ class box_simulation():
         plt.tight_layout()
         plt.show()
 
-    def RDF(self, n_bins=20, dr=0.01, n_linspace=200, x_offset=5):
+    def RDF(self, n_bins=50, dr=0.01, x_offset=5):
         """ method to plot the RDF """
 
         distances_time_average = self.particle_distances[:,:,2,:].flatten()

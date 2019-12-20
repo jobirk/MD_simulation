@@ -106,7 +106,6 @@ class box_simulation():
         self.steps = n_steps
         self.particle_distances = []
         self.trajectories = []
-        self.spins = []
         self.kin_energies = []
         self.pot_energies = []
         self.Lennard_Jones_matrix = []
@@ -495,9 +494,7 @@ class box_simulation():
             """ plot the evolution of the total potential energy and the
                 difference E_1 - E_2 for each iteration step """
             E_pot = np.sum(self.Lennard_Jones_matrix[:,:,0,:], axis=(0,1)) / 2
-            fig, (ax1, ax2) = plt.subplots(1, 2)
-            fig.set_figheight(4)
-            fig.set_figwidth(13)
+            fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(13,4))
 
             ax1.set_xlabel(r"simulation step")
             ax1.set_ylabel('Energy [kJ/mol]')
@@ -521,9 +518,7 @@ class box_simulation():
         E_pot = np.sum(self.Lennard_Jones_matrix[:,:,0,:], axis=(0,1)) / 2
         # divide by two because otherwise all values are double counted
         # set up the figure for the box plot
-        fig, (ax1, ax2) = plt.subplots(1, 2)
-        fig.set_figheight(4)
-        fig.set_figwidth(13)
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize(13,4))
 
         ax1.set_xlabel(r'Time t [ns]')
         ax1.set_ylabel('Energy [kJ/mol]')
@@ -573,9 +568,7 @@ class box_simulation():
             mean_T = np.mean(temperatures)
             rel_T_variances[i] = var_T / mean_T**2
 
-        fig, (ax1) = plt.subplots(1, 1)
-        fig.set_figheight(4)
-        fig.set_figwidth(6)
+        fig, (ax1) = plt.subplots(1, 1, figsize=(6,4))
 
         ax1.set_xlabel(r'N')
         ax1.set_ylabel(r'$\sigma_{T}^2$ / $\left<T\right>^2$')
@@ -597,9 +590,7 @@ class box_simulation():
             E_pot_mean_std[i] = np.std(E_pot_mean[:i+1], ddof=1)
 
         # set up the figure for the box plot
-        fig, (ax1, ax2, ax3) = plt.subplots(1, 3)
-        fig.set_figheight(4)
-        fig.set_figwidth(13)
+        fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(13,4))
         ax1.set_title(r"Mean of $E_{pot}$")
         ax1.set_xlabel("N")
         ax1.set_ylabel(r"$\left<E_{pot}\right>$")
@@ -617,9 +608,7 @@ class box_simulation():
         return E_pot
 
     def plot_temperatures(self):
-        fig, (ax1, ax2) = plt.subplots(1, 2)
-        fig.set_figheight(4)
-        fig.set_figwidth(13)
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(13,4))
 
         ax1.set_xlabel(r'Time t [ns]')
         ax1.set_ylabel('Temperature [K]')
@@ -640,9 +629,7 @@ class box_simulation():
         y = np.array([self.trajectories[j][1,:] for j in range(self.n_particles)])
 
         # set up the figure for the box plot
-        fig, ax1 = plt.subplots()
-        fig.set_figheight(4)
-        fig.set_figwidth(4)
+        fig, ax1 = plt.subplots(figsize=(4,4))
         ax1.set_xlim((0, self.box[0]))
         ax1.set_ylim((0, self.box[1]))
 
@@ -656,9 +643,7 @@ class box_simulation():
 
     def animate_trajectories(self, ms_between_frames=30, dot_size=5, steps_per_frame=5):
         """ method to animate the particle movement """
-        fig, ax = plt.subplots()
-        fig.set_figheight(6)
-        fig.set_figwidth(6)
+        fig, ax = plt.subplots(figsize=(6,6))
 
         ax.set_xlim(0, self.box[0])
         ax.set_ylim(0, self.box[1])
@@ -694,9 +679,7 @@ class box_simulation():
         as the projections on the x and y axis """
         if end==0:
             end = self.steps
-        fig, (ax1, ax2, ax3) = plt.subplots(1, 3)
-        fig.set_figheight(3)
-        fig.set_figwidth(15)
+        fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(15,3))
 
         ax1.set_xlim((0, self.box[0]))
         ax1.set_ylim((0, self.box[1]))
@@ -727,9 +710,7 @@ class box_simulation():
         """ methdo to plot the velocity distributions """
         if end=="standard":
             end = self.steps
-        fig, (ax1, ax2, ax3) = plt.subplots(1, 3)
-        fig.set_figheight(3)
-        fig.set_figwidth(15)
+        fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(15,3))
 
         ax1.set_xlabel(r'velocity $v_x$')
         ax1.set_ylabel('probability')
@@ -768,9 +749,7 @@ class box_simulation():
         g_r =  1 / (2 * np.pi * r_linspace[1:] * rho) * dn[1:] / dr \
                * 1 / (self.steps * self.n_particles)
 
-        fig, (ax1, ax2) = plt.subplots(1, 2)
-        fig.set_figheight(4)
-        fig.set_figwidth(13)
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(13,4))
         ax1.set_xlabel(r'distance $r$')
         ax2.set_xlabel(r'distance $r$')
         ax1.set_ylabel(r'probability')
@@ -784,4 +763,119 @@ class box_simulation():
         plt.show()
 
         return r_linspace[1:], g_r
+
+class Ising_2D():
+
+    def __init__(self):
+        self.spins = []
+        self.spin_trajectory = []
+
+    def Ising_energy(self, J=2): #J in J/mol
+        """ returns the energy of the ising model """
+
+        spins_shift_x = np.roll(self.spins, 1, 0)
+        spins_shift_y = np.roll(self.spins, 1, 1)
+
+        spin_products_x = self.spins * spins_shift_x 
+        spin_products_y = self.spins * spins_shift_y
+        spin_sum = np.sum(spin_products_x, axis=(0,1)) + np.sum(spin_products_y, axis=(0,1)) 
+
+        return - 0.5 * J * spin_sum
+
+
+    def MC_Ising_simulation(self, N, ising_steps=100000, J=2, T=0.18, new_spins=True):
+        """ performs a MC simulation of the Ising model """
+
+        if new_spins:
+            self.spins = np.random.choice([-1, 1], size=(N,N))
+
+        self.ising_energies = np.zeros(ising_steps)
+        self.magnetisation  = np.zeros(ising_steps)
+        self.spin_trajectory = np.zeros((N, N, ising_steps))
+
+        E = self.Ising_energy()
+        m = np.mean(self.spins, axis=(0, 1))
+        P_list = []
+
+        for step in tqdm(range(ising_steps)):
+            i = np.random.randint(N)
+            j = np.random.randint(N)
+            self.spins[i,j] *= -1
+
+            dE = - 2 * 0.5 * J * self.spins[i,j] *  \
+                (self.spins[i, (j-1)%N] + self.spins[i, (j+1)%N] \
+                +self.spins[(i-1)%N, j] + self.spins[(i+1)%N, j])
+
+            if dE < 0:
+                E += dE # flip accepted, change energy
+                m += self.spins[i,j] * 2 / N**2 # update the magnetisation
+
+            else:
+                P = np.exp(- (dE) / (con.R * T))
+                P_list.append(P)
+                q = np.random.uniform(0,1)
+                if np.log(q) < np.log(P):
+                    E += dE                         # update energy
+                    m += self.spins[i,j] * 2 / N**2 # update the magnetisation
+                else:
+                    # step not accepted -> flip spin back
+                    self.spins[i,j] *= -1
+
+            self.ising_energies[step] = E
+            self.magnetisation[step]  = m
+            self.spin_trajectory[:,:,step]= self.spins
+
+        # plt.plot(self.magnetisation)
+        # plt.show()
+        # plt.plot(self.ising_energies)
+        # plt.show()
+        # plt.hist(P_list)
+        # plt.show()
+        return self.ising_energies, self.magnetisation, self.spin_trajectory
+
+
+    def Ising_analysis(self, N, n_temp=5, steps_1=1000, steps_2=1000):
+        """ runs the Ising MC simulation for several temperatures
+            and evaluates them """
+        temperatures = np.linspace(0.18, 0.4, n_temp)
+        mean_energies           = np.zeros(n_temp)
+        mean_magnetisations     = np.zeros(n_temp)
+        mean_squared_energies       = np.zeros(n_temp)
+        mean_squared_magnetisations = np.zeros(n_temp)
+
+        new_spin_orientations = False
+        for i, T in enumerate(temperatures):
+            a, b, c                 = self.MC_Ising_simulation(N, T=T, new_spins=True, ising_steps=steps_1)
+            energy_T, mag_T, spins  = self.MC_Ising_simulation(N, T=T, new_spins=False, ising_steps=steps_2)
+            mean_energies[i]                = np.mean(energy_T)
+            mean_squared_energies[i]        = np.mean(energy_T**2)
+            mean_magnetisations[i]          = np.mean(mag_T)
+            mean_squared_magnetisations[i]  = np.mean(mag_T**2)
+            plt.imshow(spins[:,:,1], cmap="hot")
+            plt.show()
+
+        C_V = (mean_squared_energies - mean_energies**2) / (con.R * temperatures**2)
+        Chi_T = (mean_squared_magnetisations - mean_magnetisations**2) / (con.R * temperatures)
+
+        fig, axs = plt.subplots(2, 2, figsize=(13, 7))
+        axs = axs.flatten()
+        axs[0].set_title(r"Mean energy $\left<E\right>$")
+        axs[1].set_title(r"Mean magnetisation $\left<m\right>$")
+        axs[2].set_title(r"Specific heat at constant Volume $C_{V}$")
+        axs[3].set_title(r"Magnetic susceptibility $\chi_{T}$")
+        axs[0].set_xlabel(r"$Temperature T$")
+        axs[1].set_xlabel(r"$Temperature T$")
+        axs[2].set_xlabel(r"$Temperature T$")
+        axs[3].set_xlabel(r"$Temperature T$")
+        axs[0].set_ylabel(r"$\left<E\right>$")
+        axs[1].set_ylabel(r"$\left<m\right>$")
+        axs[2].set_ylabel(r"$C_{V}$")
+        axs[3].set_ylabel(r"$\chi_{T}$")
+        axs[0].plot(temperatures, mean_energies)
+        axs[1].plot(temperatures, mean_magnetisations, marker="o", ls="")
+        axs[2].plot(temperatures, C_V, marker="o", ls="")
+        axs[3].plot(temperatures, Chi_T, marker="o", ls="")
+
+        plt.tight_layout()
+        plt.show()
 

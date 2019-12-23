@@ -291,6 +291,24 @@ class box_simulation():
                 self.trajectories[:, 2, step_index] + 0.5 * (ax + ax_new) * dt
         self.trajectories[:, 3, step_index+1] = \
                 self.trajectories[:, 3, step_index] + 0.5 * (ay + ay_new) * dt
+    
+    def move_all_particles(self, step, r_x=0, r_y=0, length=0.05):
+        """ moves all particles along r """
+        self.trajectories[:, 0, step+1] = (self.trajectories[:, 0, step] + \
+                                           r_x*length) % self.box[0]
+        self.trajectories[:, 1, step+1] = (self.trajectories[:, 1, step] + \
+                                           r_y*length) % self.box[1]
+
+    def move_single_particle(self, part_index, step, r_x=0, r_y=0, \
+                             random_direction=False, length=0.05):
+        if random_direction:
+            phi = np.random.uniform(0, 2*np.pi)
+            r_x = np.cos(phi)
+            r_y = np.sin(phi)
+        self.trajectories[part_index, 0, step+1] = \
+            (self.trajectories[part_index, 0, step] + r_x*length) % self.box[0]
+        self.trajectories[part_index, 1, step+1] = \
+            (self.trajectories[part_index, 1, step] + r_y*length) % self.box[1]
 
     def calc_F_direction(self, step):
         """ returns the normalised F vector at given time step """
@@ -300,7 +318,7 @@ class box_simulation():
         Fx = np.sum(self.Lennard_Jones_matrix[:, :, 1, step], axis=1)
         Fy = np.sum(self.Lennard_Jones_matrix[:, :, 2, step], axis=1)
         F_abs = np.sqrt(Fx**2 + Fy**2)
-        # build r vector of length 0.05nm along F
+        # build unit vector r along F
         r_x = Fx / F_abs
         r_y = Fy / F_abs
         return np.array([r_x, r_y])
@@ -327,24 +345,6 @@ class box_simulation():
         # multiply the velocities of the given step with the factor lambda
         self.trajectories[:, 2:4, step] *= lam
         return T, lam
-    
-    def move_all_particles(self, step, r_x=0, r_y=0, length=0.05):
-        """ moves all particles along r """
-        self.trajectories[:, 0, step+1] = (self.trajectories[:, 0, step] + \
-                                           r_x*length) % self.box[0]
-        self.trajectories[:, 1, step+1] = (self.trajectories[:, 1, step] + \
-                                           r_y*length) % self.box[1]
-
-    def move_single_particle(self, part_index, step, r_x=0, r_y=0, \
-                             random_direction=False, length=0.05):
-        if random_direction:
-            phi = np.random.uniform(0, 2*np.pi)
-            r_x = np.cos(phi)
-            r_y = np.sin(phi)
-        self.trajectories[part_index, 0, step+1] = \
-            (self.trajectories[part_index, 0, step] + r_x*length) % self.box[0]
-        self.trajectories[part_index, 1, step+1] = \
-            (self.trajectories[part_index, 1, step] + r_y*length) % self.box[1]
 
     def MD_simulation(self, step_interval=1, use_lower_cutoff=False, upper_cutoff=False, T=100):
         """ method to run the simulation and create the trajectories """
@@ -438,11 +438,12 @@ class box_simulation():
         r = self.calc_F_direction(0)
         E_1 = self.E_pot(0)
         E_2 = E_1 - 1
-        counter_E1_larger_E2 = 0
+        stop_SD = False
 
         for i in tqdm(range(self.steps)):
 
             continue_moving = True
+            steps_in_this_direction = 0
 
             while continue_moving and step<self.steps:
                 # move all particles in the direction of the force vector
@@ -454,7 +455,7 @@ class box_simulation():
                 if E_1 > E_2:
                     # continue, and set the old E_2 as new E_1
                     E_1 = E_2
-                    counter_E1_larger_E2 += 1
+                    steps_in_this_direction += 1
                     if step > self.steps:
                         break
                 else:
@@ -462,9 +463,11 @@ class box_simulation():
                     # reverse the last step
                     self.move_all_particles(step, r[0], r[1], length=0)
                     continue_moving = False
+                    if steps_in_this_direction==0:
+                        stop_SD = True
                 step += 1
 
-            if step > self.steps:
+            if step > self.steps or stop_SD:
                 break
 
             # calculate the new direction of the Force vector
@@ -472,7 +475,7 @@ class box_simulation():
 
         if plot_from:
             """ plot the evolution of the total potential energy """
-            E_pot = np.sum(self.Lennard_Jones_matrix[:,:,0,:], axis=(0,1)) / 2
+            E_pot = np.sum(self.Lennard_Jones_matrix[:,:,0,:step], axis=(0,1)) / 2
             fig, (ax1) = plt.subplots(1, 1, figsize=(6,4))
 
             ax1.set_xlabel(r"simulation step")
@@ -484,6 +487,9 @@ class box_simulation():
 
             plt.tight_layout()
             plt.show()
+
+        # return the number of the step after which the minimisation has ended
+        return step
 
     def plot_energies(self, only_Epot=False):
         E_pot = np.sum(self.Lennard_Jones_matrix[:,:,0,:], axis=(0,1)) / 2

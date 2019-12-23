@@ -103,9 +103,6 @@ class box_simulation():
         self.particle_mass = particle_mass
         self.step_interval = 0
 
-    def init_box(self, x, y):
-        self.box = [x, y]
-
     def generate_particles(self, test_particles=[], v=1, m=1, T=0, grid=False):
         """ method to generate a starting position of particles and velocities
             distributed randomly in the box. Also creates the essential arrays
@@ -372,8 +369,8 @@ class box_simulation():
             # update all velocities
             self.verlet_update_velocities(step, dt=step_interval)
             # rescale new velocities with berendsen thermostat
-            self.thermostat[step+1,:] = self.berendsen_thermo(step+1, 0.0002, T)
-            # print('Temperature', self.get_T(step), end='\n')
+            if T:
+                self.thermostat[step+1,:] = self.berendsen_thermo(step+1, 0.0002, T)
 
         self.kin_energies = 0.5 * self.particle_mass * \
                 (self.trajectories[:,2,:]**2 + self.trajectories[:,3,:]**2)
@@ -495,14 +492,14 @@ class box_simulation():
         E_pot = np.sum(self.Lennard_Jones_matrix[:,:,0,:], axis=(0,1)) / 2
         # divide by two because otherwise all values are double counted
         # set up the figure for the box plot
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize(13,4))
+        if only_Epot:
+            fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(13,4))
+        else:
+            fig, ax1 = plt.subplots(1, 1, figsize=(7,4))
 
         ax1.set_xlabel(r'Time t [ns]')
         ax1.set_ylabel('Energy [kJ/mol]')
-        # ax2.set_xlabel(r'Time t [ns]')
-        # ax2.set_ylabel('Energy [kJ/mol]')
         ax1.set_title('Energy as a function of time')
-        # ax2.set_title('Difference in total energy per step')
 
         time_range = np.arange(self.steps+1) * 2e-6 #time in ns
 
@@ -526,63 +523,11 @@ class box_simulation():
             ax1.plot(time_range, E_pot, label=r"$E_{pot}$", color="r")
             ax1.plot(time_range, E_kin, label=r"$E_{kin}$", color="g")
             ax1.plot(time_range, E_tot, label=r"$E_{kin} + E_{pot}$", color="b")
-        # ax1.axhline(E_tot[0], ls="--", color="b")
-        ax1.legend()
 
-        # ax2.plot(time_range[1:], E_tot_diff, label=r"$E_{tot}(t+\Delta t) - E_{tot}(t)$", color="b")
-        # ax2.axhline(0, ls="--", color="b")
-        # ax2.legend()
-
-        plt.tight_layout()
-        plt.show()
-
-    def temperature_analysis(self, N_start=3, deltaN=1):
-        N_array = np.arange(N_start, self.n_particles, deltaN)
-        rel_T_variances = np.zeros(len(N_array))
-        for i in tqdm(range(len(N_array))):
-            temperatures = np.array([self.get_T(step, N_array[i]) for step in range(self.steps)])
-            var_T = np.var(temperatures)
-            mean_T = np.mean(temperatures)
-            rel_T_variances[i] = var_T / mean_T**2
-
-        fig, (ax1) = plt.subplots(1, 1, figsize=(6,4))
-
-        ax1.set_xlabel(r'N')
-        ax1.set_ylabel(r'$\sigma_{T}^2$ / $\left<T\right>^2$')
-        ax1.set_title('Relative variance of the temperature')
-        
-        ax1.plot(N_array, rel_T_variances, label=r'$\sigma_{T}^2$ / $\left<T\right>^2$')
-        ax1.plot(N_array, 1/N_array, label=r'1/N')
         ax1.legend()
 
         plt.tight_layout()
         plt.show()
-    
-    def Epot_convergence(self, n_start=0):
-        E_pot = np.sum(self.Lennard_Jones_matrix[:,:,0,:], axis=(0,1)) / 2
-        E_pot_mean      = np.zeros(len(E_pot))
-        E_pot_mean_std  = np.zeros(len(E_pot))
-        for i in tqdm(range(len(E_pot))):
-            E_pot_mean[i]     = np.mean(E_pot[:i+1])
-            E_pot_mean_std[i] = np.std(E_pot_mean[:i+1], ddof=1)
-
-        # set up the figure for the box plot
-        fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(13,4))
-        ax1.set_title(r"Mean of $E_{pot}$")
-        ax1.set_xlabel("N")
-        ax1.set_ylabel(r"$\left<E_{pot}\right>$")
-        ax2.set_title(r"Standard deviation of $\left<E_{pot}\right>$")
-        ax2.set_xlabel("N")
-        ax2.set_ylabel(r"$\sigma \cdot \sqrt{N}$")
-        ax1.plot(E_pot_mean[n_start:], label=r"$\left<E_{pot}\right>$")
-        ax2.plot(E_pot_mean_std[n_start:] * np.sqrt(np.arange(1,len(E_pot_mean_std[n_start:])+1)), label=r"$\sigma * \sqrt{N}$")
-        ax3.plot(E_pot_mean_std[n_start:], label=r"$\sigma$")
-        ax2.legend()
-        ax3.legend()
-
-        plt.tight_layout()
-        plt.show()
-        return E_pot
 
     def plot_temperatures(self):
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(13,4))
@@ -714,7 +659,7 @@ class box_simulation():
         plt.tight_layout()
         plt.show()
 
-    def RDF(self, n_bins=50, dr=0.01, x_offset=5):
+    def RDF(self, n_bins=50, dr=0.01):
         """ method to plot the RDF """
 
         distances_time_average = self.particle_distances[:,:,2,:].flatten()
@@ -744,6 +689,55 @@ class box_simulation():
         plt.show()
 
         return r_linspace[1:], g_r
+
+    def temperature_analysis(self, N_start=3, deltaN=1):
+        N_array = np.arange(N_start, self.n_particles, deltaN)
+        rel_T_variances = np.zeros(len(N_array))
+        for i in tqdm(range(len(N_array))):
+            temperatures = np.array([self.get_T(step, N_array[i]) for step in range(self.steps)])
+            var_T = np.var(temperatures)
+            mean_T = np.mean(temperatures)
+            rel_T_variances[i] = var_T / mean_T**2
+
+        fig, (ax1) = plt.subplots(1, 1, figsize=(6,4))
+
+        ax1.set_xlabel(r'N')
+        ax1.set_ylabel(r'$\sigma_{T}^2$ / $\left<T\right>^2$')
+        ax1.set_title('Relative variance of the temperature')
+        
+        ax1.plot(N_array, rel_T_variances, label=r'$\sigma_{T}^2$ / $\left<T\right>^2$')
+        ax1.plot(N_array, 1/N_array, label=r'1/N')
+        ax1.legend()
+
+        plt.tight_layout()
+        plt.show()
+    
+    def Epot_convergence(self, n_start=0):
+        E_pot = np.sum(self.Lennard_Jones_matrix[:,:,0,:], axis=(0,1)) / 2
+        E_pot_mean      = np.zeros(len(E_pot))
+        E_pot_mean_std  = np.zeros(len(E_pot))
+        for i in tqdm(range(len(E_pot))):
+            E_pot_mean[i]     = np.mean(E_pot[:i+1])
+            E_pot_mean_std[i] = np.std(E_pot_mean[:i+1], ddof=1)
+
+        # set up the figure for the box plot
+        fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(13,4))
+        ax1.set_title(r"Mean of $E_{pot}$")
+        ax1.set_xlabel("N")
+        ax1.set_ylabel(r"$\left<E_{pot}\right>$")
+        ax2.set_title(r"Standard deviation of $\left<E_{pot}\right>$")
+        ax2.set_xlabel("N")
+        ax2.set_ylabel(r"$\sigma \cdot \sqrt{N}$")
+        ax1.plot(E_pot_mean[n_start:], label=r"$\left<E_{pot}\right>$")
+        ax2.plot(E_pot_mean_std[n_start:] * np.sqrt(np.arange(1,len(E_pot_mean_std[n_start:])+1)), label=r"$\sigma * \sqrt{N}$")
+        ax3.plot(E_pot_mean_std[n_start:], label=r"$\sigma$")
+        ax2.legend()
+        ax3.legend()
+
+        plt.tight_layout()
+        plt.show()
+        return E_pot
+
 
 class Ising_2D():
 

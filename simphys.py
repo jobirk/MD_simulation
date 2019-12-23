@@ -153,7 +153,7 @@ class box_simulation():
                 i += 1
         if T:
             # assign velocities according to 2D boltzmann distrib.
-            # >>> overwrite the previously defined velocities
+            # -> overwrite the previously defined velocities
             print('Assigning velocities according to Maxwell Boltzmann distribution at T=%s'%(T))
             sigma = np.sqrt(con.R * T / self.particle_mass)
             vx = np.random.normal(scale=sigma, size=self.n_particles)
@@ -435,10 +435,6 @@ class box_simulation():
             the system using the method of steepest descent """
 
         step = 0
-        run_loop = True
-        counts_else = 0
-        E_1_minus_E_2 = np.zeros(self.steps)
-
         r = self.calc_F_direction(0)
         E_1 = self.E_pot(0)
         E_2 = E_1 - 1
@@ -449,50 +445,42 @@ class box_simulation():
             continue_moving = True
 
             while continue_moving and step<self.steps:
+                # move all particles in the direction of the force vector
                 self.move_all_particles(step, r[0], r[1], length=step_length)
+                # calculate new distances, potential and energy
                 self.calculate_distances(step+1)
                 self.calculate_LJ_potential(step+1, use_lower_cutoff=False)
-                self.calculate_LJ_force(step+1, use_lower_cutoff=False)
                 E_2 = self.E_pot(step+1)
-                E_1_minus_E_2[step] = E_1-E_2
-                E_1 = E_2
-                step += 1
                 if E_1 > E_2:
                     # continue, and set the old E_2 as new E_1
+                    E_1 = E_2
                     counter_E1_larger_E2 += 1
                     if step > self.steps:
                         break
                 else:
                     # dont move in that direction any more
+                    # reverse the last step
+                    self.move_all_particles(step, r[0], r[1], length=0)
                     continue_moving = False
+                step += 1
+
             if step > self.steps:
                 break
 
             # calculate the new direction of the Force vector
             r = self.calc_F_direction(step)
 
-        steps = range(len(E_1_minus_E_2))
-
         if plot_from:
-            """ plot the evolution of the total potential energy and the
-                difference E_1 - E_2 for each iteration step """
+            """ plot the evolution of the total potential energy """
             E_pot = np.sum(self.Lennard_Jones_matrix[:,:,0,:], axis=(0,1)) / 2
-            fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(13,4))
+            fig, (ax1) = plt.subplots(1, 1, figsize=(6,4))
 
             ax1.set_xlabel(r"simulation step")
             ax1.set_ylabel('Energy [kJ/mol]')
             ax1.set_title("Evolution of potential energy")
-            ax2.set_title(r"Energy difference $E_1 - E_2$")
-            ax2.set_ylabel(r"$E_1 - E_2$")
-            ax2.set_xlabel(r"simulation step")
 
             ax1.plot(range(plot_from,len(E_pot)), E_pot[plot_from:], label=r"$E_{pot}$", color="r")
-            ax2.plot(steps[plot_from:], E_1_minus_E_2[plot_from:], 
-                     label=r"$E_1 - E_2$")
-            ax2.axhline(0, color="g")
-
             ax1.legend()
-            ax2.legend()
 
             plt.tight_layout()
             plt.show()

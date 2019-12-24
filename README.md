@@ -47,3 +47,22 @@ This class contains several methods allowing to perform both MD and MC simulatio
 * `RDF()`
 	+ `n_bins=50` number of bins in the distance histogram and number of points in the RDF plot
 	+ `dr=0.01` dr used for the calculation (width of the circle)
+
+## Example for how to run a box simulation
+
+Initialise the box, minimise the potential energy with steepest descent, save particle positions
+
+	n_steps = 500
+	box = box_simulation(5, 5, n_particles=9**2, n_steps=n_steps, particle_mass=0.018)
+	box.generate_particles(v=5, phi=[0,np.pi/2], grid=True)
+	n_min = box.run_SD(step_length=0.01, plot_from=False)
+	box.save_particle_positions(n_min, filename="testSD.txt")
+
+
+Load the minimised particle positions and run the simulation
+
+	box.load_particles(filename="testSD.txt", v=10000, T=0)
+	box.MD_simulation(step_interval=2e-6, upper_cutoff=0.9, T=0)
+	box.plot_energies()
+	box.animate_trajectories(ms_between_frames=20, steps_per_frame=20)
+

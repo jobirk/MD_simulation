@@ -54,7 +54,7 @@ Initialise the box, minimise the potential energy with steepest descent, save pa
 
 	n_steps = 500
 	box = box_simulation(5, 5, n_particles=9**2, n_steps=n_steps, particle_mass=0.018)
-	box.generate_particles(v=5, phi=[0,np.pi/2], grid=True)
+	box.generate_particles(T=50)
 	n_min = box.run_SD(step_length=0.01, plot_from=False)
 	box.save_particle_positions(n_min, filename="testSD.txt")
 
@@ -62,7 +62,7 @@ Initialise the box, minimise the potential energy with steepest descent, save pa
 Load the minimised particle positions and run the simulation
 
 	box.load_particles(filename="testSD.txt", v=10000, T=0)
-	box.MD_simulation(step_interval=2e-6, upper_cutoff=0.9, T=0)
+	box.MD_simulation(step_interval=2e-6, upper_cutoff=0.9, T=100)
 	box.plot_energies()
 	box.animate_trajectories(ms_between_frames=20, steps_per_frame=20)
 

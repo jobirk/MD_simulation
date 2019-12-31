@@ -28,32 +28,34 @@ class Ising_2D():
         return - 0.5 * J * spin_sum
 
 
-    def MC_Ising_simulation(self, N, ising_steps=100000, J=2, T=0.18, new_spins=True,
+    def MC_simulation(self, N, simulation_steps=100000, J=2, T=0.18, new_spins=True,
                             print_progress=False):
         """ performs a MC simulation of the Ising model """
-
-        counter_accepted = 0
 
         if new_spins:
             self.spins = np.random.choice([-1, 1], size=(N,N))
 
-        self.ising_energies = np.zeros(ising_steps)
-        self.magnetisation  = np.zeros(ising_steps)
-        self.spin_trajectory = np.zeros((N, N, ising_steps))
+        self.steps = simulation_steps
+        self.ising_energies = np.zeros(simulation_steps)
+        self.magnetisation  = np.zeros(simulation_steps)
+        self.spin_trajectory = np.zeros((N, N, simulation_steps))
 
         E = self.Ising_energy()
         m = np.mean(self.spins, axis=(0, 1))
 
-        for step in (range(ising_steps)):
+        for step in (range(simulation_steps)):
 
-            if print_progress:
-                if (step/ising_steps*100)%1==0:
-                    print(int(step/ising_steps*100), "% completed", end='\r')
+            if print_progress: # print some information about the progress
+                if (step/simulation_steps*100)%1==0:
+                    print(int(step/simulation_steps*100), "% completed", end='\r')
 
+            # generate a random pair (i,j) of indices
             i = np.random.randint(N)
             j = np.random.randint(N)
-            self.spins[i,j] *= -1
+            # flip the spin
+            self.spins[i,j] *= -1 
 
+            # calculate the change in energy
             dE = - 2 * 0.5 * J * self.spins[i,j] *  \
                 (self.spins[i, (j-1)%N] + self.spins[i, (j+1)%N] \
                 +self.spins[(i-1)%N, j] + self.spins[(i+1)%N, j])
@@ -61,22 +63,21 @@ class Ising_2D():
             if dE < 0:
                 E += dE                         # flip accepted, change energy
                 m += self.spins[i,j] * 2 / N**2 # update the magnetisation
-                counter_accepted += 1
 
             else:
                 P = np.exp(- (dE) / (con.R * T))
                 q = np.random.uniform(0,1)
-                if np.log(q) < np.log(P):
-                    E += dE                         # update energy
+                if q < P:
+                    E += dE                         # accepted, update energy
                     m += self.spins[i,j] * 2 / N**2 # update the magnetisation
-                    counter_accepted += 1
                 else:
-                    self.spins[i,j] *= -1 # step not accepted -> flip spin back
+                    # step not accepted -> flip spin back
+                    self.spins[i,j] *= -1 
 
+            # save energy, magnetisation and spins of this step
             self.ising_energies[step] = E
             self.magnetisation[step]  = m
             self.spin_trajectory[:,:,step]= self.spins
-        # print("Total flips:", ising_steps, "Accepted flips:", counter_accepted)
 
         return self.ising_energies, self.magnetisation, self.spin_trajectory
 
@@ -93,8 +94,11 @@ class Ising_2D():
         new_spin_orientations = False
         for i, T in enumerate(temperatures):
             t1 = time.time()
-            a, b, c                 = self.MC_Ising_simulation(N, T=T, new_spins=True, ising_steps=steps_1)
-            energy_T, mag_T, spins  = self.MC_Ising_simulation(N, T=T, new_spins=False, ising_steps=steps_2)
+            # perform simulation for equilibration
+            a, b, c                 = self.MC_simulation(N, T=T, new_spins=True, simulation_steps=steps_1)
+            # perfrom simulation in equilibrium
+            energy_T, mag_T, spins  = self.MC_simulation(N, T=T, new_spins=False, simulation_steps=steps_2)
+            # calculate energie and magnetisation properties
             mean_energies[i]                = np.mean(energy_T)
             mean_squared_energies[i]        = np.mean(energy_T**2)
             mean_magnetisations[i]          = np.mean(mag_T)
@@ -108,16 +112,16 @@ class Ising_2D():
         C_V = (mean_squared_energies - mean_energies**2) / (con.R * temperatures**2)
         Chi_T = (mean_squared_magnetisations - mean_magnetisations**2) / (con.R * temperatures)
 
-        fig, axs = plt.subplots(2, 2, figsize=(13, 7))
+        fig, axs = plt.subplots(2, 2, figsize=(11, 7))
         axs = axs.flatten()
         axs[0].set_title(r"Mean energy $\left<E\right>$")
         axs[1].set_title(r"Mean magnetisation $\left<m\right>$")
         axs[2].set_title(r"Specific heat at constant Volume $C_{V}$")
         axs[3].set_title(r"Magnetic susceptibility $\chi_{T}$")
-        axs[0].set_xlabel(r"$Temperature T$")
-        axs[1].set_xlabel(r"$Temperature T$")
-        axs[2].set_xlabel(r"$Temperature T$")
-        axs[3].set_xlabel(r"$Temperature T$")
+        axs[0].set_xlabel(r"Temperature $T$")
+        axs[1].set_xlabel(r"Temperature $T$")
+        axs[2].set_xlabel(r"Temperature $T$")
+        axs[3].set_xlabel(r"Temperature $T$")
         axs[0].set_ylabel(r"$\left<E\right>$")
         axs[1].set_ylabel(r"$\left<m\right>$")
         axs[2].set_ylabel(r"$C_{V}$")
@@ -131,12 +135,7 @@ class Ising_2D():
         plt.show()
 
 
-    def Ising_visualisation(self, N, T, steps=1000, steps_per_frame=5,
-                            number_of_plots=0):
-        print("Starting simulation.")
-        energy_T, mag_T, spins = self.MC_Ising_simulation(N, T=T, new_spins=True, 
-                                 ising_steps=steps, print_progress=True)
-        print("Done with simulation.")
+    def visualisation(self, steps_per_frame=5, number_of_plots=0):
 
         if number_of_plots:
             if number_of_plots%3!=0:
@@ -145,9 +144,9 @@ class Ising_2D():
             fig, axs = plt.subplots(n_rows, 3, figsize=(15,n_rows*5))
             axs = axs.flatten()
             for i in range(number_of_plots):
-                step = int(i * steps/number_of_plots)
+                step = int(i / number_of_plots * self.steps)
                 axs[i].set_title(r"step %i"%(step))
-                axs[i].imshow(spins[:,:,step])
+                axs[i].imshow(self.spin_trajectory[:,:,step])
 
             plt.show()
         
@@ -155,14 +154,14 @@ class Ising_2D():
             fig, ax = plt.subplots(figsize=(3,3), dpi=100)
             ax.set_title(r"Phase transition of the Ising model")
 
-            im = plt.imshow(spins[:,:,0])
+            im = plt.imshow(self.spin_trajectory[:,:,0])
 
             def animate(i):
-                im.set_data(spins[:,:,i])
+                im.set_data(self.spin_trajectory[:,:,i])
                 return im
 
             plt.close()
-            anim = animation.FuncAnimation(fig, animate, np.arange(0, steps, steps_per_frame), interval=100, blit=False);
+            anim = animation.FuncAnimation(fig, animate, np.arange(0, self.steps, steps_per_frame), interval=100, blit=False);
             return HTML(anim.to_html5_video());
 
 

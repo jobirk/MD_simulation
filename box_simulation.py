@@ -1,8 +1,6 @@
 import numpy as np
-import copy
 import matplotlib.pyplot as plt
 from matplotlib import animation, rc
-from scipy.stats import rv_continuous
 import scipy.constants as con
 from IPython.display import HTML
 from tqdm import tqdm

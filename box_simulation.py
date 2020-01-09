@@ -164,6 +164,44 @@ class box_simulation():
         self.kin_energies         = np.zeros([self.n_particles, self.steps+1])
         self.pot_energies         = np.zeros([self.n_particles, self.steps+1])
 
+    def circle_temperature(self, T=10, r=1):
+        print('Generating velocities in circle of radius %.2f and center at center of box'%(r))
+        print('Assigning velocities according to Maxwell Boltzmann distribution at T=%s'%(T))
+
+        # first calculate which particles are in this circle
+        step_index = 0
+        x_values = self.trajectories[:, 0, step_index]
+        y_values = self.trajectories[:, 1, step_index]
+
+        # subtract the center values from the coordinates
+        x_center_distance = distance_pbc_transformation(x_values - self.box[0]/2, self.box[0])
+        y_center_distance = distance_pbc_transformation(y_values - self.box[1]/2, self.box[1])
+
+        center_distance = np.sqrt(x_center_distance**2 + y_center_distance**2) #shape (n_particles)
+
+        in_circle = np.where(center_distance < r)
+
+        print("in_circle indices:", in_circle[0])
+        self.plot_trajectories(circle_radius=r, markersize=5)
+
+        # print("shape of center_distance array: ", center_distance.shape)
+
+        # x_mesh = np.meshgrid(x_values, x_values)
+        # dx = x_mesh[1] - x_mesh[0] # x_mesh[i,j] = p_i.x - p_j.x
+        # dx = distance_pbc_transformation(dx, box_length=self.box[0])
+
+        # y_mesh = np.meshgrid(y_values, y_values)
+        # dy = y_mesh[1] - y_mesh[0] # y_mesh[i,j] = p_i.y - p_j.y
+        # dy = distance_pbc_transformation(dy, box_length=self.box[0])
+
+        sigma = np.sqrt(con.R * T / self.particle_mass)
+        vx = np.random.normal(scale=sigma, size=len(in_circle[0]))
+        vy = np.random.normal(scale=sigma, size=len(in_circle[0]))
+        self.trajectories[:,2,0] = 0
+        self.trajectories[:,3,0] = 0
+        self.trajectories[in_circle,2,0] = vx
+        self.trajectories[in_circle,3,0] = vy
+
     def save_particle_positions(self, step, filename="no_filename.txt"):
         """ method to save the particle positions at given step to file """
         np.savetxt(filename, self.trajectories[:,:,step])
@@ -341,7 +379,8 @@ class box_simulation():
         self.trajectories[:, 2:4, step] *= lam
         return T, lam
 
-    def MD_simulation(self, step_interval=1, use_lower_cutoff=False, upper_cutoff=False, T=100):
+    def MD_simulation(self, step_interval=1, use_lower_cutoff=False, 
+                      upper_cutoff=False, T=100):
         """ method to run the simulation and create the trajectories """
 
         self.step_interval = step_interval
@@ -484,6 +523,7 @@ class box_simulation():
             plt.show()
 
         # return the number of the step after which the minimisation has ended
+        print("Steepest descent minimisation finished at step", step)
         return step
 
     def plot_energies(self, only_Epot=False):
@@ -543,7 +583,7 @@ class box_simulation():
         plt.tight_layout()
         plt.show()
 
-    def plot_trajectories(self):
+    def plot_trajectories(self, circle_radius=0, markersize=2):
         """ method to plot the trajectories of all particles """
         x = np.array([self.trajectories[j][0,:] for j in range(self.n_particles)])
         y = np.array([self.trajectories[j][1,:] for j in range(self.n_particles)])
@@ -556,8 +596,12 @@ class box_simulation():
         ax1.set_xlabel('sposition x')
         ax1.set_ylabel('position y')
 
+        if circle_radius:
+            circle = plt.Circle((self.box[0]/2, self.box[1]/2), circle_radius, fill=False)
+            ax1.add_artist(circle)
+
         for xi, yi in zip(x, y):
-            ax1.plot(xi, yi,"o", ms=1)
+            ax1.plot(xi, yi,"o", ms=markersize)
         plt.tight_layout()
         plt.show()
 
@@ -593,9 +637,9 @@ class box_simulation():
         plt.close()
         anim = animation.FuncAnimation(fig, animate, init_func=init, \
                                    frames=x_animate.shape[1], interval=ms_between_frames, blit=True)
-        Writer = animation.writers['ffmpeg']
-        writer = Writer(fps=15, metadata=dict(artist='Me'), bitrate=1800)
-        anim.save("animation.mp4", writer=writer)
+        # Writer = animation.writers['ffmpeg']
+        # writer = Writer(fps=15, metadata=dict(artist='Me'), bitrate=1800)
+        # anim.save("animation.mp4", writer=writer)
         return HTML(anim.to_html5_video())
 
     def occupation(self, start=0, end=0, n_bins=50):

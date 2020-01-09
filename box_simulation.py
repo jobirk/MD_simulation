@@ -642,6 +642,30 @@ class box_simulation():
         # anim.save("animation.mp4", writer=writer)
         return HTML(anim.to_html5_video())
 
+    def Ekin_propagation(self, steps_per_frame=5, number_of_plots=0):
+
+        fig, ax = plt.subplots(figsize=(3,3), dpi=100)
+        ax.set_title(r"Propagation of kinetic energy")
+
+        x0 = self.trajectories[:,0,0]
+        y0 = self.trajectories[:,1,0]
+        Ekin0 = self.kin_energies[:,0]
+        data, x, y = np.histogram2d(x0, y0, weights=Ekin0, bins=15)
+
+        im = plt.imshow(data.T, cmap=plt.cm.Reds, interpolation='none', extent=[0,self.box[0],0,self.box[1]])
+
+        def animate(i):
+            x_i = self.trajectories[:,0,i]
+            y_i = self.trajectories[:,1,i]
+            Ekin_i = self.kin_energies[:,i]
+            data, x, y = np.histogram2d(x_i, y_i, weights=Ekin_i, bins=15)
+            im.set_data(data.T)
+            return im
+
+        plt.close()
+        anim = animation.FuncAnimation(fig, animate, np.arange(0, self.steps, steps_per_frame), interval=100, blit=False);
+        return HTML(anim.to_html5_video());
+
     def occupation(self, start=0, end=0, n_bins=50):
         """ method to plot the occupation on the x-y plane as well
         as the projections on the x and y axis """

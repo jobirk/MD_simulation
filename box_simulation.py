@@ -88,10 +88,11 @@ def Lennard_Jones(distances, C_12=9.847044e-6, C_6=6.2647225e-3, cutoff=0.33, \
 class box_simulation():
 
     def __init__(self, box_x=50, box_y=50, n_particles=50, n_steps=2000, \
-                 particle_mass=0.018, pbc=True):
+                 particle_mass=0.018, pbc=True, grid=False):
         self.box = [box_x, box_y]
         self.n_particles = n_particles
         self.pbc = pbc
+        self.grid = grid
         self.steps = n_steps
         self.particle_distances = []
         self.trajectories = []
@@ -100,8 +101,9 @@ class box_simulation():
         self.Lennard_Jones_matrix = []
         self.particle_mass = particle_mass
         self.step_interval = 0
+        self.temperatures = []
 
-    def generate_particles(self, test_particles=[], v=1, m=1, T=0, grid=False):
+    def generate_particles(self, test_particles=[], v=1, m=1, T=0):
         """ method to generate a starting position of particles and velocities
             distributed randomly in the box. Also creates the essential arrays
             to save the simulation result. """
@@ -113,13 +115,14 @@ class box_simulation():
         self.trajectories = np.zeros([self.n_particles, 4, self.steps+1])
 
         # >>> positions <<<
-        if grid:
+        if self.grid:
             # place particles in a grid
             n_row = np.sqrt(self.n_particles)
             if n_row%1 != 0:
                 print(">>> ERROR: Please choose number of particles which is the square root of an integer")
             n_row = int(n_row)
             dist_neighbour = self.box[0] / n_row
+            self.dist_neighbour = dist_neighbour
             positions = np.zeros([2, self.n_particles])
             print("generating particles arranged in a grid")
             particle = 0
@@ -129,6 +132,7 @@ class box_simulation():
                     y = dist_neighbour/2 + j * dist_neighbour
                     positions[:, particle] = (x,y)
                     particle += 1
+            self.temperatures = np.zeros([n_row, n_row, self.steps+1])
 
         else:
             positions = np.random.uniform(0, self.box[0], (2, n_random))
@@ -164,7 +168,7 @@ class box_simulation():
         self.kin_energies         = np.zeros([self.n_particles, self.steps+1])
         self.pot_energies         = np.zeros([self.n_particles, self.steps+1])
 
-    def circle_temperature(self, T=10, r=1):
+    def circle_temperature(self, T=10, r=1, plot_structure=False, mean_velocities=False):
         print('Generating velocities in circle of radius %.2f and center at center of box'%(r))
         print('Assigning velocities according to Maxwell Boltzmann distribution at T=%s'%(T))
 
@@ -181,26 +185,33 @@ class box_simulation():
 
         in_circle = np.where(center_distance < r)
 
-        print("in_circle indices:", in_circle[0])
-        self.plot_trajectories(circle_radius=r, markersize=5)
+        if plot_structure:
+            # print("in_circle indices:", in_circle[0])
+            self.plot_trajectories(circle_radius=r, markersize=5)
 
         # print("shape of center_distance array: ", center_distance.shape)
+        if self.grid:
+            T_values = self.temperatures[:,:,0].flatten()
+            T_values[in_circle[0]] = T
+            self.temperatures[:,:,0] = T_values.reshape(self.temperatures[:,:,0].shape)
 
-        # x_mesh = np.meshgrid(x_values, x_values)
-        # dx = x_mesh[1] - x_mesh[0] # x_mesh[i,j] = p_i.x - p_j.x
-        # dx = distance_pbc_transformation(dx, box_length=self.box[0])
-
-        # y_mesh = np.meshgrid(y_values, y_values)
-        # dy = y_mesh[1] - y_mesh[0] # y_mesh[i,j] = p_i.y - p_j.y
-        # dy = distance_pbc_transformation(dy, box_length=self.box[0])
-
-        sigma = np.sqrt(con.R * T / self.particle_mass)
-        vx = np.random.normal(scale=sigma, size=len(in_circle[0]))
-        vy = np.random.normal(scale=sigma, size=len(in_circle[0]))
-        self.trajectories[:,2,0] = 0
-        self.trajectories[:,3,0] = 0
-        self.trajectories[in_circle,2,0] = vx
-        self.trajectories[in_circle,3,0] = vy
+        else:
+            if mean_velocities:
+                v = np.sqrt(2 / self.particle_mass * con.R * T)
+                # v = 
+                v_angles = np.random.uniform(0, 2*np.pi, len(in_circle[0]))
+                self.trajectories[:,2,0] = 0
+                self.trajectories[:,3,0] = 0
+                self.trajectories[in_circle,2,0] = v * np.cos(v_angles)
+                self.trajectories[in_circle,3,0] = v * np.sin(v_angles)
+            else:
+                sigma = np.sqrt(con.R * T / self.particle_mass)
+                vx = np.random.normal(scale=sigma, size=len(in_circle[0]))
+                vy = np.random.normal(scale=sigma, size=len(in_circle[0]))
+                self.trajectories[:,2,0] = 0
+                self.trajectories[:,3,0] = 0
+                self.trajectories[in_circle,2,0] = vx
+                self.trajectories[in_circle,3,0] = vy
 
     def save_particle_positions(self, step, filename="no_filename.txt"):
         """ method to save the particle positions at given step to file """
@@ -642,28 +653,37 @@ class box_simulation():
         # anim.save("animation.mp4", writer=writer)
         return HTML(anim.to_html5_video())
 
-    def Ekin_propagation(self, steps_per_frame=5, number_of_plots=0):
+    def heat_propagation(self, steps_per_frame=5, number_of_plots=0, nbins=15, ms_between_frames=100, interpolation='gaussian'):
 
         fig, ax = plt.subplots(figsize=(3,3), dpi=100)
-        ax.set_title(r"Propagation of kinetic energy")
+        ax.set_title(r"Propagation of heat")
 
         x0 = self.trajectories[:,0,0]
         y0 = self.trajectories[:,1,0]
-        Ekin0 = self.kin_energies[:,0]
-        data, x, y = np.histogram2d(x0, y0, weights=Ekin0, bins=15)
 
-        im = plt.imshow(data.T, cmap=plt.cm.Reds, interpolation='none', extent=[0,self.box[0],0,self.box[1]])
+        if self.grid:
+            T_0 = self.temperatures[:,:,0].flatten()
+        else:
+            T_0 = self.kin_energies[:,0]
+
+        data, x, y = np.histogram2d(x0, y0, weights=T_0, bins=nbins)
+
+        im = plt.imshow(data.T, cmap=plt.cm.get_cmap(name='hot'), interpolation=interpolation, extent=[0,self.box[0],0,self.box[1]])
+        fig.colorbar(im, ax=ax)
 
         def animate(i):
             x_i = self.trajectories[:,0,i]
             y_i = self.trajectories[:,1,i]
-            Ekin_i = self.kin_energies[:,i]
-            data, x, y = np.histogram2d(x_i, y_i, weights=Ekin_i, bins=15)
-            im.set_data(data.T)
+            if self.grid:
+                im.set_data(self.temperatures[:,:,i])
+            else:
+                T_i = self.kin_energies[:,i]
+                data, x, y = np.histogram2d(x_i, y_i, weights=T_i, bins=nbins)
+                im.set_data(data.T)
             return im
 
         plt.close()
-        anim = animation.FuncAnimation(fig, animate, np.arange(0, self.steps, steps_per_frame), interval=100, blit=False);
+        anim = animation.FuncAnimation(fig, animate, frames=np.arange(0, self.steps, steps_per_frame), interval=ms_between_frames, blit=False);
         return HTML(anim.to_html5_video());
 
     def occupation(self, start=0, end=0, n_bins=50):
@@ -803,5 +823,32 @@ class box_simulation():
         plt.tight_layout()
         plt.show()
         return E_pot
+
+    def heat_integrator(self, step, dt=1, alpha=0.1):
+        """ calculates the temperatures of the next step """
+
+        T_shift_x_left  = np.roll(self.temperatures[:,:,step], -1, 0)
+        T_shift_x_right = np.roll(self.temperatures[:,:,step],  1, 0)
+        T_shift_y_left  = np.roll(self.temperatures[:,:,step], -1, 1)
+        T_shift_y_right = np.roll(self.temperatures[:,:,step],  1, 1)
+
+        dT_over_dt = alpha * (T_shift_x_left + T_shift_x_right + T_shift_y_left + T_shift_y_right - 4*self.temperatures[:,:,step]) / self.dist_neighbour**2
+
+        self.temperatures[:,:,step+1] = self.temperatures[:,:,step] + dT_over_dt * dt
+
+    def heat_grid_simulation(self, dt, alpha):
+        """ performs the simulation of the heat transfer """
+
+        for step in tqdm(range(self.steps)):
+            self.heat_integrator(step, dt=dt, alpha=alpha)
+
+
+
+
+
+
+
+
+
 
 

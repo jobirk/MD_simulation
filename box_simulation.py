@@ -653,38 +653,64 @@ class box_simulation():
         # anim.save("animation.mp4", writer=writer)
         return HTML(anim.to_html5_video())
 
-    def heat_propagation(self, steps_per_frame=5, number_of_plots=0, nbins=15, ms_between_frames=100, interpolation='gaussian'):
+    def heat_propagation(self, steps_per_frame=5, number_of_plots=0, nbins=15, 
+            ms_between_frames=100, interpolation='gaussian'):
 
-        fig, ax = plt.subplots(figsize=(3,3), dpi=100)
-        ax.set_title(r"Propagation of heat")
 
-        x0 = self.trajectories[:,0,0]
-        y0 = self.trajectories[:,1,0]
+        if number_of_plots:
+            if number_of_plots%3!=0:
+                print(">>> ERROR: please give multiple of 3 as number of plots <<<")
+            n_rows = int((number_of_plots)/3)
+            fig, axs = plt.subplots(n_rows, 3, figsize=(15,n_rows*5))
+            axs = axs.flatten()
 
-        if self.grid:
-            T_0 = self.temperatures[:,:,0].flatten()
+            for i in range(number_of_plots):
+                step = int(i / number_of_plots * self.steps)
+                x_i = self.trajectories[:,0,step]
+                y_i = self.trajectories[:,1,step]
+                if self.grid:
+                    im = axs[i].imshow(self.temperatures[:,:,step], cmap=plt.cm.get_cmap(name='hot'), interpolation=interpolation, extent=[0,self.box[0],0,self.box[1]])
+                    fig.colorbar(im, ax=axs[i])
+                else:
+                    T_i = self.kin_energies[:,step]
+                    data, x, y = np.histogram2d(x_i, y_i, weights=T_i, bins=nbins)
+                    im = axs[i].imshow(data.T, cmap=plt.cm.get_cmap(name='hot'), interpolation=interpolation, extent=[0,self.box[0],0,self.box[1]])
+                    fig.colorbar(im, ax=axs[i])
+
+            plt.show()
+
         else:
-            T_0 = self.kin_energies[:,0]
+            fig, ax = plt.subplots(figsize=(3,3), dpi=100)
+            ax.set_title(r"Propagation of heat")
 
-        data, x, y = np.histogram2d(x0, y0, weights=T_0, bins=nbins)
+            x0 = self.trajectories[:,0,0]
+            y0 = self.trajectories[:,1,0]
 
-        im = plt.imshow(data.T, cmap=plt.cm.get_cmap(name='hot'), interpolation=interpolation, extent=[0,self.box[0],0,self.box[1]])
-        fig.colorbar(im, ax=ax)
-
-        def animate(i):
-            x_i = self.trajectories[:,0,i]
-            y_i = self.trajectories[:,1,i]
             if self.grid:
-                im.set_data(self.temperatures[:,:,i])
+                T_0 = self.temperatures[:,:,0].flatten()
             else:
-                T_i = self.kin_energies[:,i]
-                data, x, y = np.histogram2d(x_i, y_i, weights=T_i, bins=nbins)
-                im.set_data(data.T)
-            return im
+                T_0 = self.kin_energies[:,0]
 
-        plt.close()
-        anim = animation.FuncAnimation(fig, animate, frames=np.arange(0, self.steps, steps_per_frame), interval=ms_between_frames, blit=False);
-        return HTML(anim.to_html5_video());
+            data, x, y = np.histogram2d(x0, y0, weights=T_0, bins=nbins)
+
+            im = plt.imshow(data.T, cmap=plt.cm.get_cmap(name='hot'), interpolation=interpolation, extent=[0,self.box[0],0,self.box[1]])
+            fig.colorbar(im, ax=ax)
+
+            def animate(i):
+                x_i = self.trajectories[:,0,i]
+                y_i = self.trajectories[:,1,i]
+                if self.grid:
+                    im.set_data(self.temperatures[:,:,i])
+                else:
+                    T_i = self.kin_energies[:,i]
+                    data, x, y = np.histogram2d(x_i, y_i, weights=T_i, bins=nbins)
+                    im.set_data(data.T)
+                return im
+
+            plt.close()
+            anim = animation.FuncAnimation(fig, animate, frames=np.arange(0, self.steps, steps_per_frame), 
+                    interval=ms_between_frames, blit=False);
+            return HTML(anim.to_html5_video());
 
     def occupation(self, start=0, end=0, n_bins=50):
         """ method to plot the occupation on the x-y plane as well

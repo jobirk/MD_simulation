@@ -655,8 +655,7 @@ class box_simulation():
 
     def heat_propagation(self, steps_per_frame=5, number_of_plots=0, nbins=15, 
             ms_between_frames=100, interpolation='gaussian'):
-
-
+        
         if number_of_plots:
             if number_of_plots%3!=0:
                 print(">>> ERROR: please give multiple of 3 as number of plots <<<")
@@ -666,17 +665,22 @@ class box_simulation():
 
             for i in range(number_of_plots):
                 step = int(i / number_of_plots * self.steps)
+                axs[i].set_title("heat map at step %i"%(step))
+                axs[i].set_xlabel("x")
+                axs[i].set_ylabel("y")
+
                 x_i = self.trajectories[:,0,step]
                 y_i = self.trajectories[:,1,step]
                 if self.grid:
-                    im = axs[i].imshow(self.temperatures[:,:,step], cmap=plt.cm.get_cmap(name='hot'), interpolation=interpolation, extent=[0,self.box[0],0,self.box[1]])
-                    fig.colorbar(im, ax=axs[i])
+                    im = axs[i].imshow(self.temperatures[:,:,step], cmap=plt.cm.get_cmap(name='hot'), 
+                            interpolation=interpolation, extent=[0,self.box[0],0,self.box[1]], vmin=0, vmax=self.temperatures.max(), filternorm=1)
                 else:
                     T_i = self.kin_energies[:,step]
                     data, x, y = np.histogram2d(x_i, y_i, weights=T_i, bins=nbins)
                     im = axs[i].imshow(data.T, cmap=plt.cm.get_cmap(name='hot'), interpolation=interpolation, extent=[0,self.box[0],0,self.box[1]])
-                    fig.colorbar(im, ax=axs[i])
-
+            fig.subplots_adjust(right=0.9)
+            cbar_ax = fig.add_axes([0.95, 0.15, 0.05, 0.7])
+            fig.colorbar(im, cax=cbar_ax)
             plt.show()
 
         else:
@@ -867,14 +871,5 @@ class box_simulation():
 
         for step in tqdm(range(self.steps)):
             self.heat_integrator(step, dt=dt, alpha=alpha)
-
-
-
-
-
-
-
-
-
 
 

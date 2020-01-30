@@ -7,6 +7,8 @@ from tqdm import tqdm
 import time
 import sys
 
+kbT = 38
+
 def U(x, T=300):
     """ returns the potential at a position x
 
@@ -19,7 +21,7 @@ def U(x, T=300):
     float
 
     """
-    return con.R * T * (0.28 * (0.25*x**4 + 0.1*x**3 - 3.24*x**2) + 3.5)
+    return kbT * (0.28 * (0.25*x**4 + 0.1*x**3 - 3.24*x**2) + 3.5)
 
 def dUdx(x, T=300):
     """ derivative of the potential U
@@ -33,7 +35,7 @@ def dUdx(x, T=300):
     float
 
     """
-    return con.R * T * (0.28 * (0.25*4*x**3 + 0.1*3*x**2 - 3.24*2*x))
+    return kbT * (0.28 * (0.25*4*x**3 + 0.1*3*x**2 - 3.24*2*x))
 
 
 class Markov_simulation():
@@ -96,7 +98,7 @@ class Markov_simulation():
         self.traj[1, step+1] = self.traj[1, step] \
                                 - 1/self.m * dUdx(self.traj[0, step], T=self.T) * self.dt\
                                 - 1/self.m * Gamma * self.traj[1, step] * self.dt \
-                                + 1/self.m * np.sqrt(2 * con.R * self.T * Gamma * self.dt) * self.R[step]
+                                + 1/self.m * np.sqrt(2 * kbT * Gamma * self.dt) * self.R[step]
 
     def simulate(self):
         """
@@ -159,7 +161,7 @@ class Markov_simulation():
         interval : int, optional
             save only every n*interval'th step, default is 1 (every step saved)
         """
-        np.savetxt(filename, self.traj[:,::interval])
+        np.savetxt(filename, self.traj[0,::interval])
         if interval!=1:
             print("Saved the trajectory of every %ith step to the file '%s'" %(interval, filename))
         else:
@@ -181,7 +183,7 @@ def calculate_states(trajectory):
     array
     """ 
 
-    x = np.copy(trajectory[0,:])
+    x = np.copy(trajectory)
 
     states = np.zeros(len(x))
     # set the first state randomly to -1 or 1
@@ -208,9 +210,8 @@ def calculate_states(trajectory):
     N_right = len(np.where(states== 1)[0])
 
     # calculate the transitions
-    states_shift = np.roll(states, 1, axis=0) # all states are shifted one index further
     # calculate difference of states[i] and states[i-1]
-    diff = states - states_shift
+    diff = states - np.roll(states, 1, axis=0)
     # diff = -2 corresponds to transition right -> left
     # diff =  2 corresponds to transition left  -> right
     N_left_right = len(np.where(diff== 2)[0])

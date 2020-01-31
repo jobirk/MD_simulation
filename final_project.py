@@ -6,6 +6,7 @@ from IPython.display import HTML
 from tqdm import tqdm
 import time
 import sys
+import os
 
 kbT = 38
 
@@ -72,8 +73,8 @@ class Markov_simulation():
         self.steps  = steps
         self.dt     = dt
         self.m      = m
-        self.T      = T
         # normal distributed noise with gaussian of mean 0 and variance 1
+        np.random.seed(42)
         self.R      = np.random.normal(0, 1, size=steps+1)
 
     def integrator(self, step, Gamma=100):
@@ -93,10 +94,11 @@ class Markov_simulation():
         self.x[step+1] = self.x[step] + self.v[step] * self.dt
 
         # calculate the velocity at step+1
-        self.v[step+1] = self.v[step] \
-                                - 1/self.m * dUdx(self.x[step], T=self.T) * self.dt\
-                                - 1/self.m * Gamma * self.v[step] * self.dt \
-                                + 1/self.m * np.sqrt(2 * kbT * Gamma * self.dt) * self.R[step]
+        self.v[step+1] =   self.v[step] \
+                         - 1/self.m * dUdx(self.x[step]) * self.dt \
+                         - 1/self.m * Gamma * self.v[step] * self.dt \
+                         + 1/self.m * np.sqrt(2 * kbT * Gamma * self.dt) \
+                           * self.R[step]
 
     def simulate(self):
         """
@@ -104,48 +106,6 @@ class Markov_simulation():
         """
         for i in tqdm(range(self.steps)):
             self.integrator(i)
-
-    def plot_trajectory(self, end_step, start_step=0):
-        """
-        method to plot the trajectory of the particle as a function of time
-
-        Parameters
-        ----------
-        end_step : int
-            last step that is included in the plot
-
-        start_step : int, optional
-            first step that is included in the plot, default is 0
-        """
-        fig, ax = plt.subplots(figsize=(6,4))
-        ax.set_title(r"Trajectory of the particle")
-        ax.set_xlabel(r"Time $t$ [ps]")
-        ax.set_ylabel(r"Position $x$")
-
-        timesteps = self.dt * np.arange(self.steps)
-        ax.plot(timesteps[start_step:end_step], self.x[start_step:end_step])
-
-    def plot_histogram(self, end_step, start_step=0, nbins=30):
-        """
-        method to plot a histogram of the particle position
-
-        Parameters
-        ----------
-        end_step : int
-            last step that is included in the plot
-
-        start_step : int, optional
-            first step that is included in the plot, default is 0
-
-        nbins : int, optional
-            number of bins in the histogram, default is 30
-        """
-        fig, ax = plt.subplots(figsize=(6,4))
-        ax.set_title(r"Position of the particle")
-        ax.set_xlabel(r"Position $x$")
-        ax.set_ylabel(r"Occupation")
-
-        ax.hist(self.x[start_step:end_step], bins=nbins)
 
     def save_trajectory(self, filename, interval=1, printing=False):
         """
@@ -160,6 +120,11 @@ class Markov_simulation():
         printing : bool
             option to get a printed output telling what was saved
         """
+        if os.path.exists(filename):
+            if printing:
+                print("file already exists -> not saved again")
+            return
+
         np.savetxt(filename, self.x[::interval])
         if printing:
             if interval!=1:
@@ -168,8 +133,53 @@ class Markov_simulation():
                 print("Saved the trajectory to the file '%s'" %(filename))
 
 
+def plot_trajectory(trajectory, end_step, start_step=0):
+    """
+    method to plot the trajectory of the particle as a function of time
 
-def calculate_states(trajectory):
+    Parameters
+    ----------
+    end_step : int
+        last step that is included in the plot
+
+    start_step : int, optional
+        first step that is included in the plot, default is 0
+    """
+    fig, ax = plt.subplots(figsize=(5,3))
+    ax.set_title(r"Trajectory of the particle")
+    ax.set_xlabel(r"Step")
+    ax.set_ylabel(r"Position $x$")
+    ax.ticklabel_format(style='sci')
+
+    ax.plot(trajectory[start_step:end_step])
+    ax.xaxis.set_major_locator(plt.MaxNLocator(5))
+    plt.tight_layout()
+
+def plot_histogram(trajectory, end_step, start_step=0, nbins=30):
+    """
+    method to plot a histogram of the particle position
+
+    Parameters
+    ----------
+    end_step : int
+        last step that is included in the plot
+
+    start_step : int, optional
+        first step that is included in the plot, default is 0
+
+    nbins : int, optional
+        number of bins in the histogram, default is 30
+    """
+    fig, ax = plt.subplots(figsize=(5,3))
+    ax.set_title(r"Position distribution of the particle")
+    ax.set_xlabel(r"Position $x$")
+    ax.set_ylabel(r"Occupation")
+
+    ax.hist(trajectory[start_step:end_step], bins=nbins, density=1)
+    plt.tight_layout()
+
+
+def calculate_states_and_M(trajectory):
     """
     caculates the matrix defining the Markov State Model
 
@@ -190,6 +200,7 @@ def calculate_states(trajectory):
 
     states = np.zeros(len(x))
     # set the first state randomly to -1 or 1
+    np.random.seed(42)
     states[0] = np.random.choice([-1,1])
 
     left_indices   = np.where(x < -1)

@@ -9,50 +9,52 @@ import sys
 
 kbT = 38
 
-def U(x, T=300):
-    """ returns the potential at a position x
-
+def U(x):
+    """ returns the potential at a given position
     Parameters
     ----------
-    T : int (optional, default is 300. Given in Kelvin)
+    x : float
+        position x of the particle
 
     Returns
     ----------
-    float
+    U : float
+        value of the potential at the given position x
 
     """
     return kbT * (0.28 * (0.25*x**4 + 0.1*x**3 - 3.24*x**2) + 3.5)
 
-def dUdx(x, T=300):
-    """ derivative of the potential U
+def dUdx(x):
+    """ derivative of the potential at given position
 
     Parameters
     ----------
-    T : int (optional, default is 300. Given in Kelvin)
+    x : float
+        position x of the particle
 
     Returns
     ----------
-    float
-
+    dUdx : float
+        value of the first derivative of the potential at position x
     """
     return kbT * (0.28 * (0.25*4*x**3 + 0.1*3*x**2 - 3.24*2*x))
 
 
 class Markov_simulation():
     """
-    Object to perform a simulation using the Markovian Langevin equation
+    class to perform a simulation using the Markovian Langevin equation
 
     Attributes
     ----------
-    traj : array 
-        stores the position x and velocity v for each simulation step
-
+    x : array
+        positions x at all simulation steps
+    v : array
+        velocity v at all simulation steps
     R : array
-        normal distributed noise
-
+        normal distributed noise used for the integration
     """
 
-    def __init__(self, steps, dt=0.001, m=1, T=300):
+    def __init__(self, steps, dt=0.001, m=1):
         """
         Parameters
         ----------
@@ -64,12 +66,9 @@ class Markov_simulation():
 
         m : float, optional
             mass of the simulated particle, default is 1, unit is ps^-1
-
-        T : float, optional
-            temperature at which the simulation is carried out, unit is K
-
         """
-        self.traj   = np.zeros([2, steps+1])
+        self.x      = np.zeros(steps+1)
+        self.v      = np.zeros(steps+1)
         self.steps  = steps
         self.dt     = dt
         self.m      = m
@@ -89,15 +88,14 @@ class Markov_simulation():
 
         Gamma : float, optional
             parameter for the friction, default is 100
-
         """
         # calculate the position at step+1
-        self.traj[0, step+1] = self.traj[0, step] + self.traj[1, step] * self.dt
+        self.x[step+1] = self.x[step] + self.v[step] * self.dt
 
         # calculate the velocity at step+1
-        self.traj[1, step+1] = self.traj[1, step] \
-                                - 1/self.m * dUdx(self.traj[0, step], T=self.T) * self.dt\
-                                - 1/self.m * Gamma * self.traj[1, step] * self.dt \
+        self.v[step+1] = self.v[step] \
+                                - 1/self.m * dUdx(self.x[step], T=self.T) * self.dt\
+                                - 1/self.m * Gamma * self.v[step] * self.dt \
                                 + 1/self.m * np.sqrt(2 * kbT * Gamma * self.dt) * self.R[step]
 
     def simulate(self):
@@ -119,14 +117,13 @@ class Markov_simulation():
         start_step : int, optional
             first step that is included in the plot, default is 0
         """
-
         fig, ax = plt.subplots(figsize=(6,4))
         ax.set_title(r"Trajectory of the particle")
         ax.set_xlabel(r"Time $t$ [ps]")
         ax.set_ylabel(r"Position $x$")
 
         timesteps = self.dt * np.arange(self.steps)
-        ax.plot(timesteps[start_step:end_step], self.traj[0, start_step:end_step])
+        ax.plot(timesteps[start_step:end_step], self.x[start_step:end_step])
 
     def plot_histogram(self, end_step, start_step=0, nbins=30):
         """
@@ -148,9 +145,9 @@ class Markov_simulation():
         ax.set_xlabel(r"Position $x$")
         ax.set_ylabel(r"Occupation")
 
-        ax.hist(self.traj[0, start_step:end_step], bins=nbins)
+        ax.hist(self.x[start_step:end_step], bins=nbins)
 
-    def save_trajectory(self, filename, interval=1):
+    def save_trajectory(self, filename, interval=1, printing=False):
         """
         method to save the trajectory of the particle
 
@@ -160,12 +157,15 @@ class Markov_simulation():
             name of the text file in which the numpy array is saved
         interval : int, optional
             save only every n*interval'th step, default is 1 (every step saved)
+        printing : bool
+            option to get a printed output telling what was saved
         """
-        np.savetxt(filename, self.traj[0,::interval])
-        if interval!=1:
-            print("Saved the trajectory of every %ith step to the file '%s'" %(interval, filename))
-        else:
-            print("Saved the trajectory to the file '%s'" %(filename))
+        np.savetxt(filename, self.x[::interval])
+        if printing:
+            if interval!=1:
+                print("Saved the trajectory of every %ith step to the file '%s'" %(interval, filename))
+            else:
+                print("Saved the trajectory to the file '%s'" %(filename))
 
 
 
@@ -175,12 +175,15 @@ def calculate_states(trajectory):
 
     Parameters
     ----------
-    trajectory : array
+    trajectory : array_like
         saved trajectory from previous simulation
 
     Returns
     ----------
-    array
+    M : array_like
+        transition matrix of the trajectory
+    states : array_like
+        numpy array including the state (-1 or 1) of each simulation step
     """ 
 
     x = np.copy(trajectory)
@@ -192,7 +195,6 @@ def calculate_states(trajectory):
     left_indices   = np.where(x < -1)
     right_indices  = np.where(1 <  x)
     middle_indices = np.where((-1 < x) & (x < 1))
-    # print(middle_indices)
 
     # set states of left and right populated positions
     states[left_indices]  = -1
@@ -216,7 +218,6 @@ def calculate_states(trajectory):
     # diff =  2 corresponds to transition left  -> right
     N_left_right = len(np.where(diff== 2)[0])
     N_right_left = len(np.where(diff==-2)[0])
-    # plt.plot(diff)
 
     # calculate the transition probabilities
     p_left_right = N_left_right / N_left
@@ -227,30 +228,11 @@ def calculate_states(trajectory):
     # build Markov matrix
     M = np.array([[p_left_left,  p_left_right ],
                   [p_right_left, p_right_right]])
-    # print(p_left_right, p_left_left)
-    # print(p_right_left, p_right_right)
-    # plt.plot(diff[1:], ls="--")
-    # print("Nleft + Nright", N_left+N_right)
 
-    return M, x[left_indices], x[middle_indices], x[right_indices], states, diff
+    return M, states #x[left_indices], x[middle_indices], x[right_indices], states, diff
 
 
             
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 

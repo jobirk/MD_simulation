@@ -87,7 +87,10 @@ def Lennard_Jones(distances, C_12=9.847044e-6, C_6=6.2647225e-3, cutoff=0.33,
 def U(x, y, T=300, x_shift=5, y_shift=5, a=0.809, b=0.588):
     x = x - x_shift
     y = y - y_shift
-    return con.R * T * (0.28 * (0.25 * (a*x + b*y)**4 + 0.1 * (a*x + b*y)**3 - 3.24*(a*x + b*y)**2 + 6.856*(a*y - b*x)**2)+3.5)
+    return con.R * T * (0.28 * (0.25 * (a*x + b*y)**4 + 
+                                0.1 * (a*x + b*y)**3 - 
+                                3.24*(a*x + b*y)**2 + 
+                                6.856*(a*y - b*x)**2)+3.5)
 
 
 """>>>>>>>>>>>>>>>>>>> simulation class <<<<<<<<<<<<<<<<<"""
@@ -170,13 +173,16 @@ class box_simulation():
 
         # also setup the necessary arrays to save the simulaiton
         self.particle_distances   = np.zeros([self.n_particles, 
-                                             self.n_particles, 3, self.steps+1])
+                                             self.n_particles, 3, 
+                                              self.steps+1])
         self.Lennard_Jones_matrix = np.zeros([self.n_particles,
-                                             self.n_particles, 3, self.steps+1])
+                                             self.n_particles, 3, 
+                                              self.steps+1])
         self.kin_energies         = np.zeros([self.n_particles, self.steps+1])
         self.pot_energies         = np.zeros([self.n_particles, self.steps+1])
 
-    def circle_temperature(self, T=10, r=1, plot_structure=False, mean_velocities=False):
+    def circle_temperature(self, T=10, r=1, plot_structure=False, 
+                           mean_velocities=False):
         print('Generating velocities in circle of radius %.2f and center at center of box' % (r))
         print('Assigning velocities according to Maxwell Boltzmann distribution at T=%s' % (T))
 
@@ -251,9 +257,11 @@ class box_simulation():
 
         # also setup the necessary arrays to save the simulaiton
         self.particle_distances   = np.zeros([self.n_particles,
-                                             self.n_particles, 3, self.steps+1])
+                                             self.n_particles, 3, 
+                                              self.steps+1])
         self.Lennard_Jones_matrix = np.zeros([self.n_particles,
-                                             self.n_particles, 3, self.steps+1])
+                                             self.n_particles, 3, 
+                                              self.steps+1])
         self.kin_energies         = np.zeros([self.n_particles, self.steps+1])
         self.pot_energies         = np.zeros([self.n_particles, self.steps+1])
 
@@ -328,8 +336,10 @@ class box_simulation():
         m = self.particle_mass
         # sum potential and forces along one (the second) particle index
         # V  = np.sum(self.Lennard_Jones_matrix[:, :, 0, step_index], axis=1)
-        Fx = np.sum(self.Lennard_Jones_matrix[:, :, 1, step_index], axis=1)*1000
-        Fy = np.sum(self.Lennard_Jones_matrix[:, :, 2, step_index], axis=1)*1000
+        Fx = np.sum(self.Lennard_Jones_matrix[:, :, 1, step_index], 
+                    axis=1)*1000
+        Fy = np.sum(self.Lennard_Jones_matrix[:, :, 2, step_index], 
+                    axis=1)*1000
 
         # V_new  = np.sum(self.Lennard_Jones_matrix[:, :, 0, step_index+1], axis=1)
         Fx_new = np.sum(self.Lennard_Jones_matrix[:, :, 1, step_index+1], 
@@ -404,8 +414,10 @@ class box_simulation():
 
         self.step_interval = step_interval
         self.calculate_distances(0)
-        self.calculate_LJ_potential(0, use_lower_cutoff=use_lower_cutoff, upper_cutoff=upper_cutoff)
-        self.calculate_LJ_force(0, use_lower_cutoff=use_lower_cutoff, upper_cutoff=upper_cutoff)
+        self.calculate_LJ_potential(0, use_lower_cutoff=use_lower_cutoff, 
+                                    upper_cutoff=upper_cutoff)
+        self.calculate_LJ_force(0, use_lower_cutoff=use_lower_cutoff, 
+                                upper_cutoff=upper_cutoff)
         self.thermostat = np.zeros([self.steps+1, 2])  # T and lambda for all steps
 
         self.thermostat[0, 0] = self.get_T(0)
@@ -455,7 +467,8 @@ class box_simulation():
             # copy coordinates of current step to next step
             self.trajectories[:, :, step+1] = np.copy(self.trajectories[:, :, step])
             # move the particle i into random direction
-            self.move_single_particle(i_particle, step, length=r_length, random_direction=True)
+            self.move_single_particle(i_particle, step, length=r_length, 
+                                      random_direction=True)
             self.calculate_distances(step+1)
             self.calculate_LJ_potential(step+1, upper_cutoff=0.9)
             E_2 = self.E_pot(step+1)
@@ -564,8 +577,10 @@ class box_simulation():
         if only_Epot:
             n_start = 0
             print("E_pot at time 0:", E_pot[0])
-            ax1.plot(time_range[n_start:], E_pot[n_start:], label=r"$E_{pot}$", color="r")
-            ax2.hist(E_pot, bins=20, density=True, label=r"Distribution of energy states in MC")
+            ax1.plot(time_range[n_start:], E_pot[n_start:], 
+                     label=r"$E_{pot}$", color="r")
+            ax2.hist(E_pot, bins=20, density=True, 
+                     label=r"Distribution of energy states in MC")
             # E_lin = np.linspace(E_pot.min(), E_pot.max(), 100)
             ax2.set_xlabel('Energy [kJ/mol]')
             ax2.set_ylabel('Normalised events')
@@ -580,7 +595,8 @@ class box_simulation():
             # E_tot_diff = E_kin_diff + E_pot_diff
             ax1.plot(time_range, E_pot, label=r"$E_{pot}$", color="r")
             ax1.plot(time_range, E_kin, label=r"$E_{kin}$", color="g")
-            ax1.plot(time_range, E_tot, label=r"$E_{kin} + E_{pot}$", color="b")
+            ax1.plot(time_range, E_tot, label=r"$E_{kin} + E_{pot}$", 
+                     color="b")
 
         ax1.legend()
 
@@ -605,8 +621,10 @@ class box_simulation():
 
     def plot_trajectories(self, circle_radius=0, markersize=2):
         """ method to plot the trajectories of all particles """
-        x = np.array([self.trajectories[j][0, :] for j in range(self.n_particles)])
-        y = np.array([self.trajectories[j][1, :] for j in range(self.n_particles)])
+        x = np.array([self.trajectories[j][0, :] 
+                      for j in range(self.n_particles)])
+        y = np.array([self.trajectories[j][1, :] 
+                      for j in range(self.n_particles)])
 
         # set up the figure for the box plot
         fig, ax1 = plt.subplots(figsize=(4, 4))
@@ -617,7 +635,8 @@ class box_simulation():
         ax1.set_ylabel('position y')
 
         if circle_radius:
-            circle = plt.Circle((self.box[0]/2, self.box[1]/2), circle_radius, fill=False)
+            circle = plt.Circle((self.box[0]/2, self.box[1]/2), 
+                                circle_radius, fill=False)
             ax1.add_artist(circle)
 
         for xi, yi in zip(x, y):
@@ -638,7 +657,8 @@ class box_simulation():
         plt.xlabel('position x')
         plt.ylabel('position y')
 
-        lines = [ax.plot([], [], marker='o', linestyle='', markersize=dot_size)[0]
+        lines = [ax.plot([], [], marker='o', linestyle='', 
+                         markersize=dot_size)[0] 
                  for i in range(self.n_particles)]
 
         def init():
@@ -711,8 +731,12 @@ class box_simulation():
                                        filternorm=1)
                 else:
                     T_i = self.kin_energies[:, step]
-                    data, x, y = np.histogram2d(x_i, y_i, weights=T_i, bins=nbins)
-                    im = axs[i].imshow(data.T, cmap=plt.cm.get_cmap(name='hot'), interpolation=interpolation, extent=[0, self.box[0], 0, self.box[1]])
+                    data, x, y = np.histogram2d(x_i, y_i, weights=T_i, 
+                                                bins=nbins)
+                    im = axs[i].imshow(data.T, 
+                                       cmap=plt.cm.get_cmap(name='hot'), 
+                                       interpolation=interpolation, 
+                                       extent=[0, self.box[0], 0, self.box[1]])
             fig.subplots_adjust(right=0.9)
             cbar_ax = fig.add_axes([0.95, 0.15, 0.05, 0.7])
             fig.colorbar(im, cax=cbar_ax)
@@ -744,14 +768,17 @@ class box_simulation():
                     im.set_data(self.temperatures[:, :, i])
                 else:
                     T_i = self.kin_energies[:, i]
-                    data, x, y = np.histogram2d(x_i, y_i, weights=T_i, bins=nbins)
+                    data, x, y = np.histogram2d(x_i, y_i, weights=T_i, 
+                                                bins=nbins)
                     im.set_data(data.T)
                 return im
 
             plt.close()
             anim = animation.FuncAnimation(fig, animate, 
-                                           frames=np.arange(0, self.steps, steps_per_frame), 
-                                           interval=ms_between_frames, blit=False)
+                                           frames=np.arange(0, self.steps, 
+                                                            steps_per_frame), 
+                                           interval=ms_between_frames, 
+                                           blit=False)
             return HTML(anim.to_html5_video())
 
     def occupation(self, start=0, end=0, n_bins=50):
@@ -776,9 +803,12 @@ class box_simulation():
 
         # plot a 2D histogram of the box with 50x50 bins,
         # the returned 2D array "counter_squares" stores the number of entries of the bins
-        x = np.concatenate([self.trajectories[j][0, start:end] for j in range(self.n_particles)])
-        y = np.concatenate([self.trajectories[j][1, start:end] for j in range(self.n_particles)])
-        counter_squares, d, f, mappable = ax1.hist2d(x, y, bins=n_bins, density=1)
+        x = np.concatenate([self.trajectories[j][0, start:end] 
+                            for j in range(self.n_particles)])
+        y = np.concatenate([self.trajectories[j][1, start:end] 
+                            for j in range(self.n_particles)])
+        counter_squares, d, f, mappable = ax1.hist2d(x, y, bins=n_bins, 
+                                                     density=1)
         fig.colorbar(mappable, ax=ax1, orientation='vertical')
 
         ax2.hist(x, bins=n_bins, density=1)
@@ -802,8 +832,10 @@ class box_simulation():
         ax2.set_title(r'velocity $v_y$ distribution')
         ax3.set_title(r'total velocity $|\vec{v}|$ distribution')
         # extract numpy arrays of all vx and vy values between step "start" and step "end"
-        vx = np.concatenate([self.trajectories[j][2, start:end] for j in range(self.n_particles)])
-        vy = np.concatenate([self.trajectories[j][3, start:end] for j in range(self.n_particles)])
+        vx = np.concatenate([self.trajectories[j][2, start:end] 
+                             for j in range(self.n_particles)])
+        vy = np.concatenate([self.trajectories[j][3, start:end] 
+                             for j in range(self.n_particles)])
         # plot the normalised histograms
         ax1.hist(vx, bins=n_bins, density=1, range=(-width, width))
         ax2.hist(vy, bins=n_bins, density=1, range=(-width, width))
@@ -848,7 +880,8 @@ class box_simulation():
         N_array = np.arange(N_start, self.n_particles, deltaN)
         rel_T_variances = np.zeros(len(N_array))
         for i in tqdm(range(len(N_array))):
-            temperatures = np.array([self.get_T(step, N_array[i]) for step in range(self.steps)])
+            temperatures = np.array([self.get_T(step, N_array[i]) 
+                                     for step in range(self.steps)])
             var_T = np.var(temperatures)
             mean_T = np.mean(temperatures)
             rel_T_variances[i] = var_T / mean_T**2
@@ -883,7 +916,8 @@ class box_simulation():
         ax2.set_xlabel("N")
         ax2.set_ylabel(r"$\sigma \cdot \sqrt{N}$")
         ax1.plot(E_pot_mean[n_start:], label=r"$\left<E_{pot}\right>$")
-        ax2.plot(E_pot_mean_std[n_start:] * np.sqrt(np.arange(1, len(E_pot_mean_std[n_start:])+1)), 
+        ax2.plot(E_pot_mean_std[n_start:] * 
+                 np.sqrt(np.arange(1, len(E_pot_mean_std[n_start:])+1)), 
                  label=r"$\sigma * \sqrt{N}$")
         ax3.plot(E_pot_mean_std[n_start:], label=r"$\sigma$")
         ax2.legend()

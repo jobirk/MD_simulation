@@ -129,7 +129,8 @@ class Ising_2D():
         plt.tight_layout()
         plt.show()
 
-    def visualisation(self, steps_per_frame=5, number_of_plots=0):
+    def visualisation(self, steps_per_frame=5, number_of_plots=0,
+                      saveas=""):
 
         if number_of_plots:
             if number_of_plots % 3 != 0:
@@ -156,5 +157,21 @@ class Ising_2D():
 
             plt.close()
             anim = animation.FuncAnimation(fig, animate, np.arange(0, self.steps, steps_per_frame), interval=100, blit=False)
-            return HTML(anim.to_html5_video())
+            if saveas != "":
+                Writer = animation.writers['ffmpeg']
+                writer = Writer(  # fps=int(1000 / ms_between_frames), 
+                                metadata=dict(artist='Me'), bitrate=1800)
+                if 'mp4' in saveas:
+                    print("Saving as .mp4")
+                    anim.save(saveas, writer=writer)
+                elif '.gif' in saveas:
+                    print("Saving as .gif")
+                    anim.save(saveas, writer='imagemagick')
+                else:
+                    print("Saving as .mp4")
+                    anim.save(saveas+".mp4", writer=writer)
+                    print("Saving as .gif")
+                    anim.save(saveas+".gif", writer='imagemagick')
+            else:
+                return HTML(anim.to_html5_video())
 

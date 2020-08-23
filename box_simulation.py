@@ -308,7 +308,7 @@ class box_simulation():
         m = self.particle_mass
 
         # sum potential and forces along one (the second) particle index
-        V  = np.sum(self.Lennard_Jones_matrix[:, :, 0, step_index], axis=1)
+        # V  = np.sum(self.Lennard_Jones_matrix[:, :, 0, step_index], axis=1)
         Fx = np.sum(self.Lennard_Jones_matrix[:, :, 1, step_index], axis=1)*1000
         Fy = np.sum(self.Lennard_Jones_matrix[:, :, 2, step_index], axis=1)*1000
 
@@ -327,11 +327,11 @@ class box_simulation():
             velocity verlet algorithm """
         m = self.particle_mass
         # sum potential and forces along one (the second) particle index
-        V  = np.sum(self.Lennard_Jones_matrix[:, :, 0, step_index], axis=1)
+        # V  = np.sum(self.Lennard_Jones_matrix[:, :, 0, step_index], axis=1)
         Fx = np.sum(self.Lennard_Jones_matrix[:, :, 1, step_index], axis=1)*1000
         Fy = np.sum(self.Lennard_Jones_matrix[:, :, 2, step_index], axis=1)*1000
 
-        V_new  = np.sum(self.Lennard_Jones_matrix[:, :, 0, step_index+1], axis=1)
+        # V_new  = np.sum(self.Lennard_Jones_matrix[:, :, 0, step_index+1], axis=1)
         Fx_new = np.sum(self.Lennard_Jones_matrix[:, :, 1, step_index+1], 
                         axis=1) * 1000
         Fy_new = np.sum(self.Lennard_Jones_matrix[:, :, 2, step_index+1], 
@@ -493,7 +493,7 @@ class box_simulation():
         E_2 = E_1 - 1
         stop_SD = False
 
-        for i in tqdm(range(self.steps)):
+        for i in range(self.steps):
 
             continue_moving = True
             steps_in_this_direction = 0
@@ -625,9 +625,12 @@ class box_simulation():
         plt.tight_layout()
         plt.show()
 
-    def animate_trajectories(self, ms_between_frames=30, dot_size=3, steps_per_frame=5):
+    def animate_trajectories(self, ms_between_frames=30, dot_size=3, 
+                             steps_per_frame=5, show_axes=True, saveas=""):
         """ method to animate the particle movement """
         fig, ax = plt.subplots(figsize=(4, 4), dpi=130)
+        if show_axes is False:
+            plt.axis('off')
 
         ax.set_xlim(0, self.box[0])
         ax.set_ylim(0, self.box[1])
@@ -661,7 +664,25 @@ class box_simulation():
         # Writer = animation.writers['ffmpeg']
         # writer = Writer(fps=15, metadata=dict(artist='Me'), bitrate=1800)
         # anim.save("animation.mp4", writer=writer)
-        return HTML(anim.to_html5_video())
+        if saveas != "":
+            Writer = animation.writers['ffmpeg']
+            writer = Writer(fps=int(1000 / ms_between_frames), 
+                            metadata=dict(artist='Me'), bitrate=1800)
+            if 'mp4' in saveas:
+                print("Saving as .mp4")
+                anim.save(saveas, writer=writer)
+            elif '.gif' in saveas:
+                print("Saving as .gif")
+                anim.save(saveas, writer='imagemagick', 
+                          fps=int(1000/ms_between_frames))
+            else:
+                print("Saving as .mp4")
+                anim.save(saveas+".mp4", writer=writer)
+                print("Saving as .gif")
+                anim.save(saveas+".gif", writer='imagemagick', 
+                          fps=int(1000/ms_between_frames))
+        else:
+            return HTML(anim.to_html5_video())
 
     def heat_propagation(self, steps_per_frame=5, number_of_plots=0, nbins=15, 
                          ms_between_frames=100, interpolation='gaussian'):

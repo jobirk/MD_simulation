@@ -1,19 +1,16 @@
 
-This repository contains code to either perform simple MD simulations in a 
-2d-box or perform a 2d-Ising model simulation and visualisation.
+This repository contains code to perform simple MD simulations in a 
+2D-box.
 The MD simulation code is explained below in a little more detail. 
-For both cases, there is an example jupyter notebook in this repository.
+There is an example jupyter notebook in this repository which shows how
+such a simulation could be carried out. The code itself is stored in the
+file `box_simulation.py`.
 Note, that there are packages like ASE which make MD simulations much easier, 
-but this project contains code for performing 2d MD simulations from scratch.
+but the idea here was to perform 2D MD simulations from scratch.
 
 The MD simulations may look like this:
 
 ![](animations/MD_constant_temperature.gif)
-
-And a phase transition of a 2D Ising model like this:
-
-![](animations/Ising_phase_transition.gif)
-
 
 ## Explanation of the classes and methods
 
